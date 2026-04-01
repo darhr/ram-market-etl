@@ -3,16 +3,19 @@ CyC Computer Web Scraper Module.
 
 This module provides a class to handle RAM memories information, from "CyC Computer" store website.
 """
+
 from base_scraper import BaseScraper
 import requests
 from bs4 import BeautifulSoup
 from typing import List, Dict, Any
 import re
 
+
 class CyCScraper(BaseScraper):
     """
     Scraper class for CyC Computer website.
     """
+
     def scrape_all(self) -> List[Dict[str, Any]]:
         """
         Scrape hardware products from the target category page.
@@ -25,21 +28,23 @@ class CyCScraper(BaseScraper):
         extracted_products = []
 
         while True:
-            url = f'https://cyccomputer.pe/categoria/796-memorias-ram?page={page_number}'
+            url = (
+                f"https://cyccomputer.pe/categoria/796-memorias-ram?page={page_number}"
+            )
 
             # Request to the URL
             try:
                 response = requests.get(url, timeout=10)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
-                print(f'Error retrieving page: {e}')
+                print(f"Error retrieving page: {e}")
                 break
 
             # Parse the HTML content
-            soup = BeautifulSoup(response.content, 'html.parser')
+            soup = BeautifulSoup(response.content, "html.parser")
 
             # Find all products
-            product_elements = soup.find_all('div', class_='item-inner')
+            product_elements = soup.find_all("div", class_="item-inner")
 
             # If no products are found, break the loop
             if not product_elements:
@@ -47,45 +52,47 @@ class CyCScraper(BaseScraper):
 
             for item in product_elements:
                 # Extract name
-                name_tag = item.find('h2', class_='productName')
-                name = name_tag.get_text(strip=True) if name_tag else 'n/a'
-                
-                # Extract price
-                price_tag = item.find('span', class_='price')
-                price = price_tag.get_text(strip=True) if price_tag else 'n/a'
+                name_tag = item.find("h2", class_="productName")
+                name = name_tag.get_text(strip=True) if name_tag else "n/a"
 
-                extracted_products.append({
-                    "name": format_name(name),
-                    "price": format_price(price)
-                })
-            
+                # Extract price
+                price_tag = item.find("span", class_="price")
+                price = price_tag.get_text(strip=True) if price_tag else "n/a"
+
+                extracted_products.append(
+                    {"name": format_name(name), "price": format_price(price)}
+                )
+
             page_number += 1
 
         return extracted_products
+
 
 def format_price(price: str) -> float:
     """
     Format the price string to a float.
     """
     # Remove currency symbols, spaces, and convert comma to dot
-    pattern = r'S\/(?:\s|\xa0)*([\d.,]+)'
+    pattern = r"S\/(?:\s|\xa0)*([\d.,]+)"
     match = re.search(pattern, price)
     if match:
         number_str = match.group(1)
         # Remove commas (assuming they are thousands separators: 1,270.86 -> 1270.86)
-        cleaned_price = number_str.replace('.', '').replace(',', '.')
+        cleaned_price = number_str.replace(".", "").replace(",", ".")
         try:
             return float(cleaned_price)
         except ValueError:
             pass
     return 0.0
 
-def format_name (name: str) -> str:
+
+def format_name(name: str) -> str:
     """
     Format the name to a string.
     """
-    cleaned_name = re.sub(r'\s\(PN:.*\)', '', name)
+    cleaned_name = re.sub(r"\s\(PN:.*\)", "", name)
     return cleaned_name
+
 
 if __name__ == "__main__":
     scraper = CyCScraper()
