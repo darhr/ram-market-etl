@@ -11,6 +11,7 @@ from typing import List, Dict, Any
 import re
 import cloudscraper
 
+
 class SercoplusScraper(BaseScraper):
     """
     Scraper class for Sercoplus website.
@@ -28,9 +29,7 @@ class SercoplusScraper(BaseScraper):
         extracted_products = []
 
         while True:
-            url = (
-                f"https://sercoplus.com/87-memoria-ram-pc?page={page_number}"
-            )
+            url = f"https://sercoplus.com/87-memoria-ram-pc?page={page_number}"
 
             # Request to the URL
             try:
@@ -68,6 +67,7 @@ class SercoplusScraper(BaseScraper):
 
         return extracted_products
 
+
 def format_price(price: str) -> float:
     """
     Format the price string to a float.
@@ -85,11 +85,13 @@ def format_price(price: str) -> float:
             pass
     return 0.0
 
+
 def format_name(name: str) -> str:
     """
     Clean the product name string.
     """
     return name.replace(",", "")
+
 
 if __name__ == "__main__":
     scraper = SercoplusScraper()
