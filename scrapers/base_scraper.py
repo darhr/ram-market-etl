@@ -3,8 +3,10 @@ Module providing the base class for all scrapers.
 
 Defines the interface that all specific store scrapers must implement.
 """
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
+
 
 class BaseScraper(ABC):
     """
