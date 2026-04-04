@@ -9,6 +9,7 @@ import requests
 from typing import List, Dict, Any
 import json
 
+
 class CompuvisionScraper(BaseScraper):
     """
     Scraper class for Compuvision website.
@@ -38,13 +39,13 @@ class CompuvisionScraper(BaseScraper):
                 "hojaActual": page_number,
                 "minUSD": 0,
                 "maxUSD": 10000,
-                "marcasFilt": []
+                "marcasFilt": [],
             }
 
             # Instruct the server to return JSON instead of HTML
             headers = {
                 "X-Requested-With": "XMLHttpRequest",
-                "Accept": "application/json, text/javascript, */*; q=0.01"
+                "Accept": "application/json, text/javascript, */*; q=0.01",
             }
 
             try:
@@ -55,7 +56,7 @@ class CompuvisionScraper(BaseScraper):
                 break
 
             full_text = response.text
-            json_start_index = full_text.find('{')
+            json_start_index = full_text.find("{")
 
             product_elements = []
 
@@ -68,9 +69,7 @@ class CompuvisionScraper(BaseScraper):
                 for item in product_elements:
                     name = item["nombre"]
                     price = item["precio"]
-                    extracted_products.append(
-                        {"name": name, "price": float(price)}
-                    )
+                    extracted_products.append({"name": name, "price": float(price)})
 
             # Empty list means the last page has been consumed
             if not product_elements:
@@ -80,7 +79,8 @@ class CompuvisionScraper(BaseScraper):
 
         return extracted_products
 
+
 if __name__ == "__main__":
     scraper = CompuvisionScraper()
     products = scraper.scrape_all()
-    print (products)
+    print(products)
