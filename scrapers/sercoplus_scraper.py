@@ -50,6 +50,10 @@ class SercoplusScraper(BaseScraper):
 
             products_elements = response.json().get("products", [])
 
+            # Empty list means the last page has been consumed
+            if not products_elements:
+                break
+
             for product in products_elements:
                 name = product["name"]
                 price = product["price"]
@@ -59,10 +63,6 @@ class SercoplusScraper(BaseScraper):
                         "price": format_price(price),
                     }
                 )
-
-            # Empty list means the last page has been consumed
-            if not products_elements:
-                break
 
             page_number += 1
 

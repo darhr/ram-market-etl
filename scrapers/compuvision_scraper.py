@@ -44,12 +44,13 @@ class CompuvisionScraper(BaseScraper):
 
             # Instruct the server to return JSON instead of HTML
             headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
                 "X-Requested-With": "XMLHttpRequest",
                 "Accept": "application/json, text/javascript, */*; q=0.01",
             }
 
             try:
-                response = requests.post(url, headers=headers, data=data)
+                response = requests.post(url, timeout=10, headers=headers, data=data)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 print(f"Error retrieving page: {e}")
@@ -64,16 +65,16 @@ class CompuvisionScraper(BaseScraper):
                 # Strip any non-JSON content before the JSON object
                 clean_text = full_text[json_start_index:]
                 product_elements_json = json.loads(clean_text)
-                product_elements = product_elements_json["datas"]
+                product_elements = product_elements_json.get("datas", [])
 
-                for item in product_elements:
-                    name = item["nombre"]
-                    price = item["precio"]
-                    extracted_products.append({"name": name, "price": float(price)})
-
-            # Empty list means the last page has been consumed
+            # Empty list means the last page has been consumed (or no valid JSON was found)
             if not product_elements:
                 break
+
+            for item in product_elements:
+                name = item["nombre"]
+                price = item["precio"]
+                extracted_products.append({"name": name, "price": float(price)})
 
             page_number += 1
 
