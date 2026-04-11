@@ -6,7 +6,6 @@ This module provides a class to handle RAM memories information, from "Sercoplus
 
 from base_scraper import BaseScraper
 import requests
-from bs4 import BeautifulSoup
 from typing import List, Dict, Any
 import re
 import cloudscraper
@@ -19,7 +18,7 @@ class SercoplusScraper(BaseScraper):
 
     def scrape_all(self) -> List[Dict[str, Any]]:
         """
-        Scrape hardware products from the target category page.
+        Scrape RAM memories information from Sercoplus website.
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
@@ -28,39 +27,41 @@ class SercoplusScraper(BaseScraper):
         page_number = 1
         extracted_products = []
 
-        while True:
-            url = f"https://sercoplus.com/87-memoria-ram-pc?page={page_number}"
+        # Initialize cloudscraper once to preserve Cloudflare clearance cookies across pages
+        scraper = cloudscraper.create_scraper()
 
-            # Request to the URL
+        while True:
+            # Endpoint used internally by the site to load products dynamically
+            url = f"https://sercoplus.com/87-memoria-ram-pc?page={page_number}&from-xhr"
+
+            # Instruct the server to return JSON instead of HTML
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+            }
+
             try:
-                scraper = cloudscraper.create_scraper()
-                response = scraper.get(url, timeout=10)
+                response = scraper.get(url, timeout=10, headers=headers)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 print(f"Error retrieving page: {e}")
                 break
 
-            # Parse the HTML content
-            soup = BeautifulSoup(response.content, "html.parser")
+            products_elements = response.json().get("products", [])
 
-            # Find all products
-            product_elements = soup.find_all("article", class_="item")
-
-            # If no products are found, break the loop
-            if not product_elements:
+            # Empty list means the last page has been consumed
+            if not products_elements:
                 break
 
-            for item in product_elements:
-                # Extract name
-                name_tag = item.find("h6", itemprop="name")
-                name = name_tag.get_text(strip=True) if name_tag else "n/a"
-
-                # Extract price
-                price_tag = item.find("span", class_="price")
-                price = price_tag.get_text(strip=True) if price_tag else "n/a"
-
+            for product in products_elements:
+                name = product["name"]
+                price = product["price"]
                 extracted_products.append(
-                    {"name": format_name(name), "price": format_price(price)}
+                    {
+                        "name": format_name(name),
+                        "price": format_price(price),
+                    }
                 )
 
             page_number += 1
@@ -71,24 +72,32 @@ class SercoplusScraper(BaseScraper):
 def format_price(price: str) -> float:
     """
     Format the price string to a float.
+
+    Args:
+        price (str): Raw price string (e.g., "$\u00a01.270,86").
+
+    Returns:
+        float: The numeric price, or 0.0 if no number is found.
     """
-    # Extract the price from the string
-    pattern = r"S\/(?:\s|\xa0)*([\d.,]+)"
+    # Search for numbers with optional comma and dot
+    pattern = r"([\d.,]+)"
     match = re.search(pattern, price)
     if match:
         number_str = match.group(1)
-        # Remove commas (assuming they are thousands separators: 1,270.86 -> 1270.86)
         cleaned_price = number_str.replace(".", "").replace(",", ".")
-        try:
-            return float(cleaned_price)
-        except ValueError:
-            pass
+        return float(cleaned_price)
     return 0.0
 
 
 def format_name(name: str) -> str:
     """
-    Clean the product name string.
+    Remove commas in the product name.
+
+    Args:
+        name (str): Raw product name.
+
+    Returns:
+        str: Cleaned name.
     """
     return name.replace(",", "")
 
