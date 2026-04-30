@@ -4,7 +4,7 @@ Compuvision Scraper Module.
 This module provides a class to handle RAM memories information, from "Compuvision" store website.
 """
 
-from base_scraper import BaseScraper
+from .base_scraper import BaseScraper
 import requests
 from typing import List, Dict, Any
 import json

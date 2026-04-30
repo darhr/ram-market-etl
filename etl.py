@@ -5,7 +5,7 @@ Extracts data from scrapers, transforms it, and loads it into the database.
 """
 import logging
 from typing import List, Dict, Any
-from scrapers import factory
+from scrapers.factory import get_all_scrapers
 
 logging.basicConfig(level=logging.INFO)
 logger: logging.Logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ def main():
     Executes the main ETL process.
     """
     logger.info("Starting ETL process...")
-    scrapers: List[Any] = factory.get_all_scrapers()
+    scrapers: List[Any] = get_all_scrapers()
     
     raw_data: List[Dict[str, Any]] = []
     for scraper in scrapers:
