@@ -9,6 +9,9 @@ import requests
 from typing import List, Dict, Any
 import re
 import cloudscraper
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SercoplusScraper(BaseScraper):
@@ -45,7 +48,7 @@ class SercoplusScraper(BaseScraper):
                 response = scraper.get(url, timeout=10, headers=headers)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
-                print(f"Error retrieving page: {e}")
+                logger.error(f"Error retrieving page: {e}")
                 break
 
             products_elements = response.json().get("products", [])
@@ -103,6 +106,7 @@ def format_name(name: str) -> str:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     scraper = SercoplusScraper()
     products = scraper.scrape_all()
-    print(products)
+    logger.info(f"Scraped {len(products)} products from Sercoplus.")
