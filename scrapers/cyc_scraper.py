@@ -60,6 +60,7 @@ class CyCScraper(BaseScraper):
                     {
                         "name": format_name(name),
                         "price": format_price(price),
+                        "store": "cyc",
                     }
                 )
 
