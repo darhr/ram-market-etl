@@ -147,7 +147,7 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
 
     transformed_ram_kit_df["total_capacity_gb"] = raw_data_df["name"].str.extract(r'\s(\d+)GB*', expand=False).astype("Int64")
     transformed_ram_kit_df["ddr_gen"] = raw_data_df["name"].str.extract(r'\sDDR(\d)', expand=False).astype("Int64")
-    transformed_ram_kit_df["speed_mts"] = raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False)
+    transformed_ram_kit_df["speed_mts"] = raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False).astype("string")
     transformed_ram_kit_df["has_rgb"] = raw_data_df["name"].str.contains("RGB")
     
     # Extract both numbers around the multiplier (e.g., 2x16 or 16x2) and take the smaller one.
@@ -157,10 +157,10 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
     # Use map on unique names to extract both brand and series from the product name
     unique_names = raw_data_df["name"].unique()
     brand_series_mapping = {name: extract_ram_series_and_brand(name) for name in unique_names}
-    transformed_ram_kit_df[["brand", "series"]] = raw_data_df["name"].map(brand_series_mapping).tolist()
+    transformed_ram_kit_df[["brand", "series"]] = pd.DataFrame(raw_data_df["name"].map(brand_series_mapping).tolist()).astype("string")
 
-    transformed_ram_kit_df["price"] = raw_data_df["price"]
-    transformed_ram_kit_df["store"] = raw_data_df["store"]
+    transformed_ram_kit_df["price"] = raw_data_df["price"].astype("Float64")
+    transformed_ram_kit_df["store"] = raw_data_df["store"].astype("string")
 
     # Save the raw data to a CSV file
     raw_data_df.to_csv("data/raw_data.csv", index=False)
