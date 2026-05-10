@@ -139,28 +139,34 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
     Returns:
         pd.DataFrame: A DataFrame containing the transformed data.
     """
-    transformed_ram_kit_df = pd.DataFrame()
-
     raw_data_df = pd.DataFrame(raw_data)
+
+    if raw_data_df.empty:
+        logger.warning("No data extracted to transform. Returning empty DataFrame.")
+        return pd.DataFrame()
+
+    # Set name column to upper case for consistent processing
     raw_data_df["name"] = raw_data_df["name"].str.upper()
     
-
-    transformed_ram_kit_df["total_capacity_gb"] = raw_data_df["name"].str.extract(r'\s(\d+)GB*', expand=False).astype("Int64")
-    transformed_ram_kit_df["ddr_gen"] = raw_data_df["name"].str.extract(r'\sDDR(\d)', expand=False).astype("Int64")
-    transformed_ram_kit_df["speed_mts"] = raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False).astype("string")
-    transformed_ram_kit_df["has_rgb"] = raw_data_df["name"].str.contains("RGB")
-    
-    # Extract both numbers around the multiplier (e.g., 2x16 or 16x2) and take the smaller one.
+    # Extract both numbers around the multiplier (e.g., 2x16 or 16x2) to later take the minimum value (kit modules)
     extracted_modules = raw_data_df["name"].str.extract(r'(?:^|\s|\()(\d+)\s*(?:GB?|G)?\s*(?:X|\*)\s*(\d+)\s*(?:GB?|G)?(?:$|\s|\))')
-    transformed_ram_kit_df["kit_modules"] = extracted_modules.astype(float).min(axis=1).fillna(1).astype("Int64")
 
-    # Use map on unique names to extract both brand and series from the product name
+    # Map on unique names to extract both brand and series from the product name
     unique_names = raw_data_df["name"].unique()
     brand_series_mapping = {name: extract_ram_series_and_brand(name) for name in unique_names}
-    transformed_ram_kit_df[["brand", "series"]] = pd.DataFrame(raw_data_df["name"].map(brand_series_mapping).tolist()).astype("string")
+    brand_series_df = pd.DataFrame(raw_data_df["name"].map(brand_series_mapping).tolist())
 
-    transformed_ram_kit_df["price"] = raw_data_df["price"].astype("Float64")
-    transformed_ram_kit_df["store"] = raw_data_df["store"].astype("string")
+    transformed_ram_kit_df = pd.DataFrame({
+        "total_capacity_gb": raw_data_df["name"].str.extract(r'\s(\d+)GB*', expand=False).astype("Int64"),
+        "ddr_gen": raw_data_df["name"].str.extract(r'\sDDR(\d)', expand=False).astype("Int64"),
+        "speed_mts": raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False).astype("string"),
+        "has_rgb": raw_data_df["name"].str.contains("RGB"),
+        "kit_modules": extracted_modules.astype(float).min(axis=1).fillna(1).astype("Int64"),
+        "brand": brand_series_df[0].astype("string"),
+        "series": brand_series_df[1].astype("string"),
+        "price": raw_data_df["price"].astype("Float64"),
+        "store": raw_data_df["store"].astype("string"),
+    })
 
     # Save the raw data to a CSV file
     raw_data_df.to_csv("data/raw_data.csv", index=False)
