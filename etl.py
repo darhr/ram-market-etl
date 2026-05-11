@@ -172,11 +172,18 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
     raw_data_df.to_csv("data/raw_data.csv", index=False)
     logger.info("Raw data saved in data/raw_data.csv")
     
-    # Save the transformed data to a CSV file
-    transformed_ram_kit_df.to_csv("data/transformed_data.csv", index=False)
+    inconsistent_data = transformed_ram_kit_df[transformed_ram_kit_df.isna().any(axis=1)]
+    consistent_data = transformed_ram_kit_df.dropna()
+    
+    # Save the consistent data to a CSV file
+    consistent_data.to_csv("data/transformed_data.csv", index=False)
     logger.info("Transformed data saved in data/transformed_data.csv")
     
-    return transformed_ram_kit_df
+    # Save the inconsistent data to a CSV file
+    inconsistent_data.to_csv("data/inconsistent_data.csv", index=False)
+    logger.info("Inconsistent data saved in data/inconsistent_data.csv")
+    
+    return consistent_data
 
 
 def load_data(df: pd.DataFrame) -> None:
