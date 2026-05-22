@@ -172,8 +172,19 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
     raw_data_df.to_csv("data/raw_data.csv", index=False)
     logger.info("Raw data saved in data/raw_data.csv")
     
-    inconsistent_data = transformed_ram_kit_df[transformed_ram_kit_df.isna().any(axis=1)]
-    consistent_data = transformed_ram_kit_df.dropna()
+    # Define critical columns that must not contain null/NaN values.
+    # series is allowed to be null/NaN for downstream analysis.
+    critical_cols = [
+        "total_capacity_gb",
+        "ddr_gen",
+        "speed_mts",
+        "brand",
+        "price",
+        "store",
+    ]
+
+    inconsistent_data = transformed_ram_kit_df[transformed_ram_kit_df[critical_cols].isna().any(axis=1)]
+    consistent_data = transformed_ram_kit_df.dropna(subset=critical_cols)
     
     # Save the consistent data to a CSV file
     consistent_data.to_csv("data/transformed_data.csv", index=False)
