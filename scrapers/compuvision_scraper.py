@@ -24,7 +24,7 @@ class CompuvisionScraper(BaseScraper):
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
-            a formatted 'name' and 'price' of the extracted products.
+            a 'name' and 'price' of the extracted products.
         """
         page_number = 0
         extracted_products = []
@@ -77,7 +77,13 @@ class CompuvisionScraper(BaseScraper):
             for item in product_elements:
                 name = item["nombre"]
                 price = item["precio"]
-                extracted_products.append({"name": name, "price": float(price), "store": "compuvision"})
+                extracted_products.append(
+                    {
+                    "name": name, 
+                    "price": float(price), 
+                    "store": "compuvision"
+                    }
+                )
 
             page_number += 1
 

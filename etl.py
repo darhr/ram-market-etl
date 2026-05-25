@@ -4,10 +4,10 @@ Main entry point for the ETL pipeline.
 Extracts data from scrapers, transforms it, and loads it into the database.
 """
 import logging
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from scrapers.factory import get_all_scrapers
 import pandas as pd
-from datetime import datetime
 from rapidfuzz import process, utils, fuzz
 import os
 
@@ -49,6 +49,41 @@ series_to_brand = {
 # Get all brands and series as lists
 all_brands = list(BRAND_SERIES_MAP.keys())
 all_series = list(series_to_brand.keys())
+
+# Part number extraction patterns, applied in order (most specific first).
+# - sercoplus embeds the PN inside an HTML <h4> tag.
+# - cyc wraps it in parentheses with a "PN:" or "PN " prefix.
+# - compuvision appends it at the end of the name, optionally followed by
+#   EAN barcodes (>=8 consecutive digits) which are ignored
+PART_NUMBER_PATTERNS: List[re.Pattern] = [
+    re.compile(r'<h4>N[u\u00fa]mero de Parte:\s*([^<]+?)\s*</h4>', re.IGNORECASE),
+    re.compile(r'\(PN:?\s*([^\)]+?)\s*\)', re.IGNORECASE),
+    re.compile(r'\s+([A-Z][A-Z0-9_\-/()+]{4,})\s*(?:\s+\d{8,})*\s*$'),
+]
+
+
+def extract_part_number(name: str) -> Optional[str]:
+    """
+    Extracts the manufacturer part number from the raw product name.
+
+    Tries three patterns in order of specificity:
+    1. Sercoplus HTML tag ``<h4>Número de Parte: ...</h4>``.
+    2. Cyc parenthetical notation ``(PN:...)`` or ``(PN ...)``.
+    3. Compuvision end-of-string alphanumeric token (letters-led, 5+ chars),
+       ignoring trailing EAN barcodes if present.
+
+    Args:
+        name (str): The raw product name.
+
+    Returns:
+        Optional[str]: The part number in uppercase with stripped whitespace,
+        or ``None`` if no pattern matches.
+    """
+    for pattern in PART_NUMBER_PATTERNS:
+        match = pattern.search(name)
+        if match:
+            return match.group(1).strip().upper()
+    return None
 
 
 def extract_series(name: str) -> Optional[str]:
@@ -111,12 +146,12 @@ def extract_ram_series_and_brand(name: str) -> Tuple[Optional[str], Optional[str
     return extract_brand(name), None
 
 
-def extract_data() -> List[Dict[str, Any]]:
+def extract_data() -> pd.DataFrame:
     """
     Extracts data from all scrapers.
 
     Returns:
-        List[Dict[str, Any]]: A list of dictionaries containing the raw data.
+        pd.DataFrame: A DataFrame containing the raw data.
     """
     scrapers = get_all_scrapers()
     raw_data: List[Dict[str, Any]] = []
@@ -126,24 +161,27 @@ def extract_data() -> List[Dict[str, Any]]:
     
     logger.info(f"Total raw records extracted: {len(raw_data)}")
     
-    return raw_data
+    # Save the raw data to a CSV file
+    raw_data_df = pd.DataFrame(raw_data)
+    raw_data_df.to_csv("data/raw_data.csv", index=False)
+    logger.info("Raw data saved in data/raw_data.csv")
+    
+    return raw_data_df
 
 
-def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
+def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Transforms raw data into a structured format.
     
     Args:
-        raw_data (List[Dict[str, Any]]): The raw data to transform.
+        raw_data_df (pd.DataFrame): The raw data to transform.
     
     Returns:
-        pd.DataFrame: A DataFrame containing the transformed data.
+        Tuple[pd.DataFrame, pd.DataFrame]: A tuple containing the consistent and inconsistent DataFrames.
     """
-    raw_data_df = pd.DataFrame(raw_data)
-
     if raw_data_df.empty:
-        logger.warning("No data extracted to transform. Returning empty DataFrame.")
-        return pd.DataFrame()
+        logger.warning("No data extracted to transform. Returning empty DataFrames.")
+        return pd.DataFrame(), pd.DataFrame()
 
     # Set name column to upper case for consistent processing
     raw_data_df["name"] = raw_data_df["name"].str.upper()
@@ -156,21 +194,25 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
     brand_series_mapping = {name: extract_ram_series_and_brand(name) for name in unique_names}
     brand_series_df = pd.DataFrame(raw_data_df["name"].map(brand_series_mapping).tolist())
 
+    # Extract part numbers before building the final DataFrame.
+    # The name is intentionally left unchanged: all other spec extractors
+    # (capacity, DDR gen, speed, RGB, modules) match patterns that appear
+    # earlier in the string and are unaffected by PN fragments.
+    raw_data_df["part_number"] = raw_data_df["name"].map(extract_part_number)
+
     transformed_ram_kit_df = pd.DataFrame({
+        "raw_name": raw_data_df["name"].astype("string"),
         "total_capacity_gb": raw_data_df["name"].str.extract(r'\s(\d+)GB*', expand=False).astype("Int64"),
         "ddr_gen": raw_data_df["name"].str.extract(r'\sDDR(\d)', expand=False).astype("Int64"),
-        "speed_mts": raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False).astype("string"),
+        "speed_mts": raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False).astype("Int64"),
         "has_rgb": raw_data_df["name"].str.contains("RGB"),
         "kit_modules": extracted_modules.astype(float).min(axis=1).fillna(1).astype("Int64"),
         "brand": brand_series_df[0].astype("string"),
         "series": brand_series_df[1].astype("string"),
+        "part_number": raw_data_df["part_number"].astype("string"),
         "price": raw_data_df["price"].astype("Float64"),
         "store": raw_data_df["store"].astype("string"),
     })
-
-    # Save the raw data to a CSV file
-    raw_data_df.to_csv("data/raw_data.csv", index=False)
-    logger.info("Raw data saved in data/raw_data.csv")
     
     # Define critical columns that must not contain null/NaN values.
     # series is allowed to be null/NaN for downstream analysis.
@@ -187,14 +229,14 @@ def transform_data(raw_data: List[Dict[str, Any]]) -> pd.DataFrame:
     consistent_data = transformed_ram_kit_df.dropna(subset=critical_cols)
     
     # Save the consistent data to a CSV file
-    consistent_data.to_csv("data/transformed_data.csv", index=False)
-    logger.info("Transformed data saved in data/transformed_data.csv")
+    consistent_data.drop(columns=["raw_name"]).to_csv("data/consistent_data.csv", index=False)
+    logger.info("Transformed data saved in data/consistent_data.csv")
     
     # Save the inconsistent data to a CSV file
-    inconsistent_data.to_csv("data/inconsistent_data.csv", index=False)
+    inconsistent_data.drop(columns=["raw_name"]).to_csv("data/inconsistent_data.csv", index=False)
     logger.info("Inconsistent data saved in data/inconsistent_data.csv")
     
-    return consistent_data
+    return consistent_data, inconsistent_data
 
 
 def load_data(df: pd.DataFrame) -> None:

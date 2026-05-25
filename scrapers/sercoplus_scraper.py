@@ -25,7 +25,7 @@ class SercoplusScraper(BaseScraper):
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
-            a formatted 'name' and 'price' of the extracted products.
+            a 'name' and 'price' of the extracted products.
         """
         page_number = 1
         extracted_products = []
@@ -58,7 +58,8 @@ class SercoplusScraper(BaseScraper):
                 break
 
             for product in products_elements:
-                name = product["name"]
+                part_number = product["description_short"]
+                name = product["name"] + " " + part_number
                 price = product["price"]
                 extracted_products.append(
                     {
