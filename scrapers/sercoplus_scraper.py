@@ -4,11 +4,14 @@ Sercoplus Web Scraper Module.
 This module provides a class to handle RAM memories information, from "Sercoplus" store website.
 """
 
-from base_scraper import BaseScraper
+from .base_scraper import BaseScraper
 import requests
 from typing import List, Dict, Any
 import re
 import cloudscraper
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SercoplusScraper(BaseScraper):
@@ -22,7 +25,7 @@ class SercoplusScraper(BaseScraper):
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
-            a formatted 'name' and 'price' of the extracted products.
+            a 'name' and 'price' of the extracted products.
         """
         page_number = 1
         extracted_products = []
@@ -45,7 +48,7 @@ class SercoplusScraper(BaseScraper):
                 response = scraper.get(url, timeout=10, headers=headers)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
-                print(f"Error retrieving page: {e}")
+                logger.error(f"Error retrieving page: {e}")
                 break
 
             products_elements = response.json().get("products", [])
@@ -55,12 +58,14 @@ class SercoplusScraper(BaseScraper):
                 break
 
             for product in products_elements:
-                name = product["name"]
+                part_number = product["description_short"]
+                name = product["name"] + " " + part_number
                 price = product["price"]
                 extracted_products.append(
                     {
                         "name": format_name(name),
                         "price": format_price(price),
+                        "store": "sercoplus",
                     }
                 )
 
@@ -103,6 +108,7 @@ def format_name(name: str) -> str:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     scraper = SercoplusScraper()
     products = scraper.scrape_all()
-    print(products)
+    logger.info(f"Scraped {len(products)} products from Sercoplus.")

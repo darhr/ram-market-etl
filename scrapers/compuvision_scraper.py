@@ -4,10 +4,13 @@ Compuvision Scraper Module.
 This module provides a class to handle RAM memories information, from "Compuvision" store website.
 """
 
-from base_scraper import BaseScraper
+from .base_scraper import BaseScraper
 import requests
 from typing import List, Dict, Any
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CompuvisionScraper(BaseScraper):
@@ -21,7 +24,7 @@ class CompuvisionScraper(BaseScraper):
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
-            a formatted 'name' and 'price' of the extracted products.
+            a 'name' and 'price' of the extracted products.
         """
         page_number = 0
         extracted_products = []
@@ -53,7 +56,7 @@ class CompuvisionScraper(BaseScraper):
                 response = requests.post(url, timeout=10, headers=headers, data=data)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
-                print(f"Error retrieving page: {e}")
+                logger.error(f"Error retrieving page: {e}")
                 break
 
             full_text = response.text
@@ -74,7 +77,13 @@ class CompuvisionScraper(BaseScraper):
             for item in product_elements:
                 name = item["nombre"]
                 price = item["precio"]
-                extracted_products.append({"name": name, "price": float(price)})
+                extracted_products.append(
+                    {
+                    "name": name, 
+                    "price": float(price), 
+                    "store": "compuvision"
+                    }
+                )
 
             page_number += 1
 
@@ -82,6 +91,7 @@ class CompuvisionScraper(BaseScraper):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     scraper = CompuvisionScraper()
     products = scraper.scrape_all()
-    print(products)
+    logger.info(f"Scraped {len(products)} products from Compuvision.")

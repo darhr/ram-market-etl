@@ -4,10 +4,13 @@ CyC Computer Scraper Module.
 This module provides a class to handle RAM memories information, from "CyC Computer" store website.
 """
 
-from base_scraper import BaseScraper
+from .base_scraper import BaseScraper
 import requests
 from typing import List, Dict, Any
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CyCScraper(BaseScraper):
@@ -21,7 +24,7 @@ class CyCScraper(BaseScraper):
 
         Returns:
             List[Dict[str, Any]]: A list of dictionaries, each containing
-            a formatted 'name' and 'price' of the extracted products.
+            a 'name' and 'price' of the extracted products.
         """
         page_number = 1
         extracted_products = []
@@ -41,7 +44,7 @@ class CyCScraper(BaseScraper):
                 response = requests.get(url, timeout=10, headers=headers)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
-                print(f"Error retrieving page: {e}")
+                logger.error(f"Error retrieving page: {e}")
                 break
 
             products_elements = response.json().get("products", [])
@@ -55,8 +58,9 @@ class CyCScraper(BaseScraper):
                 price = product["price"]
                 extracted_products.append(
                     {
-                        "name": format_name(name),
+                        "name": name,
                         "price": format_price(price),
+                        "store": "cyc",
                     }
                 )
 
@@ -85,21 +89,8 @@ def format_price(price: str) -> float:
     return 0.0
 
 
-def format_name(name: str) -> str:
-    """
-    Remove the part number suffix from a product name.
-
-    Args:
-        name (str): Raw product name (e.g., "MEMORIA 16GB DDR5 ... (PN:KF564C32RSA-16)").
-
-    Returns:
-        str: Cleaned name without the PN suffix.
-    """
-    cleaned_name = re.sub(r"\s\(PN:.*\)", "", name)
-    return cleaned_name
-
-
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     scraper = CyCScraper()
     products = scraper.scrape_all()
-    print(products)
+    logger.info(f"Scraped {len(products)} products from CyC.")
