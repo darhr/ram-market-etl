@@ -23,3 +23,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.black]
+target-version = ["py312"]
+line-length = 100
