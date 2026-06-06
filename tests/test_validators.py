@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 from utils.validators import RamKitRecord, split_valid_invalid
 
+
 def _valid_record() -> dict:
     return {
         "total_capacity_gb": 32,
@@ -19,6 +20,7 @@ def _valid_record() -> dict:
         "price": 550.0,
         "store": "compuvision",
     }
+
 
 class TestRamKitRecord:
     """Tests for the RamKitRecord schema."""
@@ -147,6 +149,7 @@ class TestRamKitRecord:
         data[field] = "   "
         with pytest.raises(ValidationError):
             RamKitRecord(**data)
+
 
 class TestSplitValidInvalid:
     """Tests for the split_valid_invalid helper."""

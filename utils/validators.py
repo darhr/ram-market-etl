@@ -4,13 +4,14 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+
 class RamKitRecord(BaseModel):
     """Schema for a single RAM kit record after transformation."""
 
     model_config = ConfigDict(
         extra="ignore",
         str_strip_whitespace=True,
-        frozen=True, # Immutable objects but only while validating with this model
+        frozen=True,  # Immutable objects but only while validating with this model
     )
 
     total_capacity_gb: Annotated[int, Field(ge=1, le=256)]
@@ -24,7 +25,9 @@ class RamKitRecord(BaseModel):
     price: Annotated[float, Field(gt=0)]
     store: Annotated[str, Field(min_length=1)]
 
+
 _RAM_ADAPTER = TypeAdapter(RamKitRecord)
+
 
 def split_valid_invalid(records: list[dict]) -> tuple[list[dict], list[dict]]:
     """Validate a batch of raw records, separating valid from invalid.
