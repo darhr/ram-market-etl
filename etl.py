@@ -5,6 +5,7 @@ Extracts data from scrapers, persists the raw snapshot to the R2 bronze layer,
 re-reads it from there as the single source of truth, transforms it, and
 loads it into the database.
 """
+
 import logging
 import re
 from typing import List, Dict, Any, Optional, Tuple
@@ -25,7 +26,9 @@ BRAND_SERIES_MAP_URL = os.getenv("BRAND_SERIES_MAP_URL")
 SERIES_ALIASES_MAP_URL = os.getenv("SERIES_ALIASES_MAP_URL")
 
 if not BRAND_SERIES_MAP_URL or not SERIES_ALIASES_MAP_URL:
-    raise ValueError("BRAND_SERIES_MAP_URL and SERIES_ALIASES_MAP_URL must be set in the environment")
+    raise ValueError(
+        "BRAND_SERIES_MAP_URL and SERIES_ALIASES_MAP_URL must be set in the environment"
+    )
 
 brand_series_df = pd.read_csv(BRAND_SERIES_MAP_URL)
 series_aliases_df = pd.read_csv(SERIES_ALIASES_MAP_URL)
@@ -34,19 +37,25 @@ brand_series_dict = brand_series_df.to_dict("list")
 raw_series_aliases_dict = series_aliases_df.to_dict("list")
 
 BRAND_SERIES_MAP = {
-    brand: [str(series).upper().strip() for series in series_list if pd.notna(series) and str(series).strip() != ""]
+    brand: [
+        str(series).upper().strip()
+        for series in series_list
+        if pd.notna(series) and str(series).strip() != ""
+    ]
     for brand, series_list in brand_series_dict.items()
 }
 SERIES_ALIASES_MAP = {
-    series: [str(alias).upper().strip() for alias in alias_list if pd.notna(alias) and str(alias).strip() != ""]
+    series: [
+        str(alias).upper().strip()
+        for alias in alias_list
+        if pd.notna(alias) and str(alias).strip() != ""
+    ]
     for series, alias_list in raw_series_aliases_dict.items()
 }
 
 # Create a reverse mapping from series to brand
 series_to_brand = {
-    series: brand
-    for brand, series_list in BRAND_SERIES_MAP.items()
-    for series in series_list
+    series: brand for brand, series_list in BRAND_SERIES_MAP.items() for series in series_list
 }
 
 # Get all brands and series as lists
@@ -59,9 +68,9 @@ all_series = list(series_to_brand.keys())
 # - compuvision appends it at the end of the name, optionally followed by
 #   EAN barcodes (>=8 consecutive digits) which are ignored
 PART_NUMBER_PATTERNS: List[re.Pattern] = [
-    re.compile(r'<h4>N[u\u00fa]mero de Parte:\s*([^<]+?)\s*</h4>', re.IGNORECASE),
-    re.compile(r'\(PN:?\s*([^\)]+?)\s*\)', re.IGNORECASE),
-    re.compile(r'\s+([A-Z][A-Z0-9_\-/()+]{4,})\s*(?:\s+\d{8,})*\s*$'),
+    re.compile(r"<h4>N[u\u00fa]mero de Parte:\s*([^<]+?)\s*</h4>", re.IGNORECASE),
+    re.compile(r"\(PN:?\s*([^\)]+?)\s*\)", re.IGNORECASE),
+    re.compile(r"\s+([A-Z][A-Z0-9_\-/()+]{4,})\s*(?:\s+\d{8,})*\s*$"),
 ]
 
 
@@ -105,19 +114,18 @@ def normalize_part_number(pn: Optional[str]) -> Optional[str]:
     if not isinstance(pn, str) or not pn:
         return None
     pn = pn.strip().upper()
-    pn = re.sub(r'\(\d+\)$', '', pn)
-    pn = re.sub(r'[/\-_\s]+', '', pn)
+    pn = re.sub(r"\(\d+\)$", "", pn)
+    pn = re.sub(r"[/\-_\s]+", "", pn)
     return pn or None
-
 
 
 def extract_series(name: str) -> Optional[str]:
     """
     Extracts the RAM series from the product name.
-    
+
     Args:
         name (str): The raw product name.
-        
+
     Returns:
         Optional[str]: The extracted series if found, else None.
     """
@@ -133,17 +141,17 @@ def extract_series(name: str) -> Optional[str]:
         for alias in aliases:
             if alias in name.split():
                 return series
-    
+
     return None
 
 
 def extract_brand(name: str) -> Optional[str]:
     """
     Extracts the RAM brand from the product name.
-    
+
     Args:
         name (str): The raw product name.
-        
+
     Returns:
         Optional[str]: The extracted brand if found, else None.
     """
@@ -157,10 +165,10 @@ def extract_brand(name: str) -> Optional[str]:
 def extract_ram_series_and_brand(name: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Extracts both the brand and series from the RAM product name.
-    
+
     Args:
         name (str): The raw product name.
-        
+
     Returns:
         Tuple[Optional[str], Optional[str]]: A tuple containing the brand and series.
     """
@@ -191,7 +199,7 @@ def extract_data() -> str:
     for scraper in scrapers:
         logger.info(f"Running scraper: {scraper.__class__.__name__}")
         raw_data.extend(scraper.scrape_all())
-    
+
     logger.info(f"Total raw records extracted: {len(raw_data)}")
     raw_data_df = pd.DataFrame(raw_data)
 
@@ -199,7 +207,7 @@ def extract_data() -> str:
     if os.getenv("ENVIRONMENT") == "development":
         raw_data_df.to_csv("data/raw_data.csv", index=False)
         logger.info("Local fallback saved in data/raw_data.csv")
-    
+
     # Bronze layer: critical step. Re-raises on failure.
     bronze_key = upload_dataframe(raw_data_df)
     return bronze_key
@@ -208,10 +216,10 @@ def extract_data() -> str:
 def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Transforms raw data into a structured format.
-    
+
     Args:
         raw_data_df (pd.DataFrame): The raw data to transform.
-    
+
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame]: A tuple containing the consistent and inconsistent DataFrames.
     """
@@ -221,9 +229,11 @@ def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
 
     # Set name column to upper case for consistent processing
     raw_data_df["name"] = raw_data_df["name"].str.upper()
-    
+
     # Extract both numbers around the multiplier (e.g., 2x16 or 16x2) to later take the minimum value (kit modules)
-    extracted_modules = raw_data_df["name"].str.extract(r'(?:^|\s|\()(\d+)\s*(?:GB?|G)?\s*(?:X|\*)\s*(\d+)\s*(?:GB?|G)?(?:$|\s|\))')
+    extracted_modules = raw_data_df["name"].str.extract(
+        r"(?:^|\s|\()(\d+)\s*(?:GB?|G)?\s*(?:X|\*)\s*(\d+)\s*(?:GB?|G)?(?:$|\s|\))"
+    )
 
     # Map on unique names to extract both brand and series from the product name
     unique_names = raw_data_df["name"].unique()
@@ -233,20 +243,26 @@ def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
     raw_data_df["part_number"] = raw_data_df["name"].map(extract_part_number)
     raw_data_df["part_number"] = raw_data_df["part_number"].map(normalize_part_number)
 
-    transformed_ram_kit_df = pd.DataFrame({
-        "raw_name": raw_data_df["name"].astype("string"),
-        "total_capacity_gb": raw_data_df["name"].str.extract(r'\s(\d+)GB*', expand=False).astype("Int64"),
-        "ddr_gen": raw_data_df["name"].str.extract(r'\sDDR(\d)', expand=False).astype("Int64"),
-        "speed_mts": raw_data_df["name"].str.extract(r'\s(\d{4})\s*(?:MHZ|MT/S)*', expand=False).astype("Int64"),
-        "has_rgb": raw_data_df["name"].str.contains("RGB"),
-        "kit_modules": extracted_modules.astype(float).min(axis=1).fillna(1).astype("Int64"),
-        "brand": brand_series_df[0].astype("string"),
-        "series": brand_series_df[1].astype("string"),
-        "part_number": raw_data_df["part_number"].astype("string"),
-        "price": raw_data_df["price"].astype("Float64"),
-        "store": raw_data_df["store"].astype("string"),
-    })
-    
+    transformed_ram_kit_df = pd.DataFrame(
+        {
+            "raw_name": raw_data_df["name"].astype("string"),
+            "total_capacity_gb": raw_data_df["name"]
+            .str.extract(r"\s(\d+)GB*", expand=False)
+            .astype("Int64"),
+            "ddr_gen": raw_data_df["name"].str.extract(r"\sDDR(\d)", expand=False).astype("Int64"),
+            "speed_mts": raw_data_df["name"]
+            .str.extract(r"\s(\d{4})\s*(?:MHZ|MT/S)*", expand=False)
+            .astype("Int64"),
+            "has_rgb": raw_data_df["name"].str.contains("RGB"),
+            "kit_modules": extracted_modules.astype(float).min(axis=1).fillna(1).astype("Int64"),
+            "brand": brand_series_df[0].astype("string"),
+            "series": brand_series_df[1].astype("string"),
+            "part_number": raw_data_df["part_number"].astype("string"),
+            "price": raw_data_df["price"].astype("Float64"),
+            "store": raw_data_df["store"].astype("string"),
+        }
+    )
+
     # Define critical columns that must not contain null/NaN values.
     # series is allowed to be null/NaN for downstream analysis.
     critical_cols = [
@@ -258,24 +274,26 @@ def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
         "store",
     ]
 
-    inconsistent_data = transformed_ram_kit_df[transformed_ram_kit_df[critical_cols].isna().any(axis=1)]
+    inconsistent_data = transformed_ram_kit_df[
+        transformed_ram_kit_df[critical_cols].isna().any(axis=1)
+    ]
     consistent_data = transformed_ram_kit_df.dropna(subset=critical_cols)
-    
+
     # Save the consistent data to a CSV file
     consistent_data.drop(columns=["raw_name"]).to_csv("data/consistent_data.csv", index=False)
     logger.info("Transformed data saved in data/consistent_data.csv")
-    
+
     # Save the inconsistent data to a CSV file
     inconsistent_data.drop(columns=["raw_name"]).to_csv("data/inconsistent_data.csv", index=False)
     logger.info("Inconsistent data saved in data/inconsistent_data.csv")
-    
+
     return consistent_data, inconsistent_data
 
 
 def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> None:
     """
     Loads transformed data into the database.
-    
+
     Args:
         consistent_df (pd.DataFrame): The DataFrame containing the consistent data to load.
         inconsistent_df (pd.DataFrame): The DataFrame containing the inconsistent data to load.
@@ -300,7 +318,7 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
 
         # Register stores and cache their IDs
         store_to_id_map: Dict[str, int] = {}
-        
+
         # Retrieve existing stores
         store_result = conn.execute(text("SELECT name, id FROM store"))
         for name, store_id in store_result.fetchall():
@@ -311,7 +329,7 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
             for store_name in new_stores:
                 conn.execute(
                     text("INSERT INTO store (name, country) VALUES (:name, 'Peru')"),
-                    {"name": store_name}
+                    {"name": store_name},
                 )
             # Re-fetch store IDs after inserting new ones
             store_result = conn.execute(text("SELECT name, id FROM store"))
@@ -326,8 +344,10 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
             logger.info(f"Processing {len(consistent_df)} consistent records...")
 
             # Resolve ram_id for each unique specification set (cache-first registration)
-            ram_id_map: Dict[Tuple[str, Optional[str], int, int, int, int, bool, Optional[str]], int] = {}
-            
+            ram_id_map: Dict[
+                Tuple[str, Optional[str], int, int, int, int, bool, Optional[str]], int
+            ] = {}
+
             # Retrieve all existing RAM specs to build the cache
             ram_specs_result = conn.execute(text("""
                 SELECT id, brand, series, total_capacity_gb, ddr_gen, speed_mts, kit_modules, has_rgb, part_number
@@ -362,7 +382,7 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
                     bool(row["has_rgb"]),
                     pn_val,
                 )
-                
+
                 if key in ram_id_map:
                     continue
 
@@ -383,7 +403,7 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
                         "kit_modules": key[5],
                         "has_rgb": key[6],
                         "part_number": key[7],
-                    }
+                    },
                 ).fetchone()
 
                 if ram_id_result:
@@ -431,14 +451,16 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
 
                 new_price = float(row["price"])
                 latest_price = latest_prices_cache.get((ram_id, store_id))
-                
+
                 # Check if price has changed or if it's a new listing
                 if latest_price is None or abs(latest_price - new_price) >= 0.01:
-                    price_inserts.append({
-                        "ram_id": ram_id,
-                        "store_id": store_id,
-                        "price": new_price,
-                    })
+                    price_inserts.append(
+                        {
+                            "ram_id": ram_id,
+                            "store_id": store_id,
+                            "price": new_price,
+                        }
+                    )
 
             # Perform a multi-row insert of all price changes
             if price_inserts:
@@ -448,7 +470,9 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
                     ON CONFLICT (ram_id, store_id, extraction_date) DO NOTHING;
                 """)
                 conn.execute(insert_price_query, price_inserts)
-                logger.info(f"Successfully loaded {len(price_inserts)} new price records into price history.")
+                logger.info(
+                    f"Successfully loaded {len(price_inserts)} new price records into price history."
+                )
             else:
                 logger.info("No price changes detected. Price history was not updated.")
 
@@ -456,7 +480,7 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
         if not inconsistent_df.empty:
             logger.info(f"Processing {len(inconsistent_df)} inconsistent records...")
             unmapped_inserts: List[Dict[str, Any]] = []
-            
+
             for _, row in inconsistent_df.iterrows():
                 store_id = store_to_id_map.get(row["store"])
                 if not store_id:
@@ -464,11 +488,9 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
 
                 raw_name = str(row["raw_name"])
                 price_val = None if pd.isna(row["price"]) else float(row["price"])
-                unmapped_inserts.append({
-                    "raw_name": raw_name,
-                    "store_id": store_id,
-                    "price": price_val
-                })
+                unmapped_inserts.append(
+                    {"raw_name": raw_name, "store_id": store_id, "price": price_val}
+                )
 
             if unmapped_inserts:
                 unmapped_query = text("""

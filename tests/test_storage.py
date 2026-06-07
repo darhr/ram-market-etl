@@ -13,7 +13,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from utils.storage import build_bronze_key, download_dataframe, upload_dataframe
 
-
 _R2_VARS = {
     "R2_BUCKET_NAME": "ram-market-lake",
     "R2_ENDPOINT_URL": "https://example.r2.cloudflarestorage.com",
@@ -57,18 +56,12 @@ class TestBuildBronzeKey:
     def test_explicit_timestamp(self) -> None:
         ts = datetime(2026, 6, 6, 14, 30, 0, tzinfo=timezone.utc)
         key = build_bronze_key(ts)
-        assert (
-            key
-            == "bronze/raw_data/2026-06-06/2026-06-06T14-30-00Z/raw_ram_data.parquet"
-        )
+        assert key == "bronze/raw_data/2026-06-06/2026-06-06T14-30-00Z/raw_ram_data.parquet"
 
     def test_naive_datetime_treated_as_utc_for_format_only(self) -> None:
         ts = datetime(2026, 1, 1, 0, 0, 0)
         key = build_bronze_key(ts)
-        assert (
-            key
-            == "bronze/raw_data/2026-01-01/2026-01-01T00-00-00Z/raw_ram_data.parquet"
-        )
+        assert key == "bronze/raw_data/2026-01-01/2026-01-01T00-00-00Z/raw_ram_data.parquet"
 
     def test_two_runs_same_day_produce_different_keys(self) -> None:
         ts_a = datetime(2026, 6, 6, 0, 0, 0, tzinfo=timezone.utc)
@@ -87,10 +80,7 @@ class TestUploadDataframe:
         with patch("utils.storage.boto3.client", return_value=mock_client):
             key = upload_dataframe(df, run_at=ts)
 
-        assert (
-            key
-            == "bronze/raw_data/2026-06-06/2026-06-06T14-30-00Z/raw_ram_data.parquet"
-        )
+        assert key == "bronze/raw_data/2026-06-06/2026-06-06T14-30-00Z/raw_ram_data.parquet"
         mock_client.put_object.assert_called_once()
         call_kwargs = mock_client.put_object.call_args.kwargs
         assert call_kwargs["Bucket"] == _R2_VARS["R2_BUCKET_NAME"]

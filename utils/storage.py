@@ -34,9 +34,7 @@ def _get_client():
         RuntimeError: If any required R2 environment variable is missing.
     """
     missing = [
-        name
-        for name in (_BUCKET_ENV, _ENDPOINT_ENV, _KEY_ENV, _SECRET_ENV)
-        if not os.getenv(name)
+        name for name in (_BUCKET_ENV, _ENDPOINT_ENV, _KEY_ENV, _SECRET_ENV) if not os.getenv(name)
     ]
     if missing:
         raise RuntimeError(f"Missing R2 environment variables: {', '.join(missing)}")
