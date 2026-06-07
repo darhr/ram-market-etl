@@ -1,7 +1,9 @@
 """
 Main entry point for the ETL pipeline.
 
-Extracts data from scrapers, transforms it, and loads it into the database.
+Extracts data from scrapers, persists the raw snapshot to the R2 bronze layer,
+re-reads it from there as the single source of truth, transforms it, and
+loads it into the database.
 """
 import logging
 import re
@@ -10,6 +12,7 @@ from scrapers.factory import get_all_scrapers
 import pandas as pd
 from rapidfuzz import process, utils, fuzz
 import os
+from utils.storage import upload_dataframe, download_dataframe
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -168,12 +171,20 @@ def extract_ram_series_and_brand(name: str) -> Tuple[Optional[str], Optional[str
     return extract_brand(name), None
 
 
-def extract_data() -> pd.DataFrame:
+def extract_data() -> str:
     """
-    Extracts data from all scrapers.
+    Extracts data from all scrapers, persists the raw snapshot to the R2 bronze
+    layer, and returns the object key for the transform stage.
+
+    The local CSV (``data/raw_data.csv``) is kept as a development fallback
+    only; the canonical raw record set lives in R2.
 
     Returns:
-        pd.DataFrame: A DataFrame containing the raw data.
+        str: The R2 object key where the bronze CSV was uploaded.
+
+    Raises:
+        botocore.exceptions.BotoCoreError: If the upload to R2 fails.
+        botocore.exceptions.ClientError: If the upload to R2 fails.
     """
     scrapers = get_all_scrapers()
     raw_data: List[Dict[str, Any]] = []
@@ -182,13 +193,16 @@ def extract_data() -> pd.DataFrame:
         raw_data.extend(scraper.scrape_all())
     
     logger.info(f"Total raw records extracted: {len(raw_data)}")
-    
-    # Save the raw data to a CSV file
     raw_data_df = pd.DataFrame(raw_data)
-    raw_data_df.to_csv("data/raw_data.csv", index=False)
-    logger.info("Raw data saved in data/raw_data.csv")
+
+    # Local fallback (dev/debug only; canonical raw lives in R2)
+    if os.getenv("ENVIRONMENT") == "development":
+        raw_data_df.to_csv("data/raw_data.csv", index=False)
+        logger.info("Local fallback saved in data/raw_data.csv")
     
-    return raw_data_df
+    # Bronze layer: critical step. Re-raises on failure.
+    bronze_key = upload_dataframe(raw_data_df)
+    return bronze_key
 
 
 def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -473,7 +487,8 @@ def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> Non
 
 if __name__ == "__main__":
     logger.info("Starting ETL process...")
-    raw_data_df = extract_data()
+    bronze_key = extract_data()
+    raw_data_df = download_dataframe(bronze_key)
     consistent_data, inconsistent_data = transform_data(raw_data_df)
     load_data(consistent_data, inconsistent_data)
     logger.info("ETL process completed")
