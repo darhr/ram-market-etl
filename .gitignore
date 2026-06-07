@@ -3,5 +3,6 @@
 __pycache__
 *.pyc
 
-# Ignore environment variables
+# Ignore environment variables (but keep the template committed)
 .env*
+!.env.example
