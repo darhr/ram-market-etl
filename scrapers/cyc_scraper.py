@@ -18,6 +18,10 @@ class CyCScraper(BaseScraper):
     Scraper class for CyC Computer website.
     """
 
+    @property
+    def store_name(self) -> str:
+        return "cyc"
+
     def scrape_all(self) -> List[Dict[str, Any]]:
         """
         Scrape RAM memories information from CyC Computer website.

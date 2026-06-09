@@ -8,15 +8,21 @@ loads it into the database.
 
 import logging
 import re
+from decimal import Decimal
 from typing import List, Dict, Any, Optional, Tuple
 from scrapers.factory import get_all_scrapers
 import pandas as pd
-from rapidfuzz import process, utils, fuzz
+from rapidfuzz import process, fuzz
 import os
+from sqlalchemy import text
 from utils.storage import upload_dataframe, download_dataframe
+from utils.validators import split_valid_invalid
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Price quantizer - round half up to 2 decimal places
+_PRICE_Q = Decimal("0.01")
 
 # Create the data folder if it doesn't exist
 os.makedirs("data", exist_ok=True)
@@ -179,7 +185,7 @@ def extract_ram_series_and_brand(name: str) -> Tuple[Optional[str], Optional[str
     return extract_brand(name), None
 
 
-def extract_data() -> str:
+def extract_data() -> tuple[str, list[str], list[str]]:
     """
     Extracts data from all scrapers, persists the raw snapshot to the R2 bronze
     layer, and returns the object key for the transform stage.
@@ -188,7 +194,10 @@ def extract_data() -> str:
     only; the canonical raw record set lives in R2.
 
     Returns:
-        str: The R2 object key where the bronze CSV was uploaded.
+        A tuple of (bronze_key, stores_success, stores_failed) where:
+        - bronze_key: The R2 object key where the bronze Parquet was uploaded.
+        - stores_success: Store names that were scraped successfully.
+        - stores_failed: Store names that failed during scraping.
 
     Raises:
         botocore.exceptions.BotoCoreError: If the upload to R2 fails.
@@ -196,11 +205,24 @@ def extract_data() -> str:
     """
     scrapers = get_all_scrapers()
     raw_data: List[Dict[str, Any]] = []
-    for scraper in scrapers:
-        logger.info(f"Running scraper: {scraper.__class__.__name__}")
-        raw_data.extend(scraper.scrape_all())
+    stores_success: list[str] = []
+    stores_failed: list[str] = []
 
-    logger.info(f"Total raw records extracted: {len(raw_data)}")
+    for scraper in scrapers:
+        logger.info("Running scraper: %s", scraper.store_name)
+        try:
+            raw_data.extend(scraper.scrape_all())
+            stores_success.append(scraper.store_name)
+        except Exception:
+            stores_failed.append(scraper.store_name)
+            logger.exception("Scraper %s failed", scraper.store_name)
+
+    logger.info(
+        "Total raw records extracted: %d (success: %s, failed: %s)",
+        len(raw_data),
+        stores_success,
+        stores_failed,
+    )
     raw_data_df = pd.DataFrame(raw_data)
 
     # Local fallback (dev/debug only; canonical raw lives in R2)
@@ -210,10 +232,10 @@ def extract_data() -> str:
 
     # Bronze layer: critical step. Re-raises on failure.
     bronze_key = upload_dataframe(raw_data_df)
-    return bronze_key
+    return bronze_key, stores_success, stores_failed
 
 
-def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def transform_data(raw_data_df: pd.DataFrame) -> pd.DataFrame:
     """
     Transforms raw data into a structured format.
 
@@ -221,21 +243,24 @@ def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
         raw_data_df (pd.DataFrame): The raw data to transform.
 
     Returns:
-        Tuple[pd.DataFrame, pd.DataFrame]: A tuple containing the consistent and inconsistent DataFrames.
+        pd.DataFrame: The transformed DataFrame with all records.
     """
     if raw_data_df.empty:
-        logger.warning("No data extracted to transform. Returning empty DataFrames.")
-        return pd.DataFrame(), pd.DataFrame()
+        logger.warning("No data extracted to transform. Returning empty DataFrame.")
+        return pd.DataFrame()
 
-    # Set name column to upper case for consistent processing
+    # Upper case for consistent matching across all extractors and fuzzy logic.
     raw_data_df["name"] = raw_data_df["name"].str.upper()
 
-    # Extract both numbers around the multiplier (e.g., 2x16 or 16x2) to later take the minimum value (kit modules)
+    # Extract both numbers around the multiplier (e.g., 2x16 or 16x2).
+    # The minimum is taken as kit_modules because symmetric listings are
+    # normalized to the lower count (e.g., 2x16 and 16x2 → 2).
     extracted_modules = raw_data_df["name"].str.extract(
         r"(?:^|\s|\()(\d+)\s*(?:GB?|G)?\s*(?:X|\*)\s*(\d+)\s*(?:GB?|G)?(?:$|\s|\))"
     )
 
-    # Map on unique names to extract both brand and series from the product name
+    # Deduplicate brand/series lookups by unique name to avoid redundant
+    # fuzzy matching on repeated product names.
     unique_names = raw_data_df["name"].unique()
     brand_series_mapping = {name: extract_ram_series_and_brand(name) for name in unique_names}
     brand_series_df = pd.DataFrame(raw_data_df["name"].map(brand_series_mapping).tolist())
@@ -263,254 +288,393 @@ def transform_data(raw_data_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFram
         }
     )
 
-    # Define critical columns that must not contain null/NaN values.
-    # series is allowed to be null/NaN for downstream analysis.
-    critical_cols = [
-        "total_capacity_gb",
-        "ddr_gen",
-        "speed_mts",
-        "brand",
-        "price",
-        "store",
-    ]
-
-    inconsistent_data = transformed_ram_kit_df[
-        transformed_ram_kit_df[critical_cols].isna().any(axis=1)
-    ]
-    consistent_data = transformed_ram_kit_df.dropna(subset=critical_cols)
-
-    # Save the consistent data to a CSV file
-    consistent_data.drop(columns=["raw_name"]).to_csv("data/consistent_data.csv", index=False)
-    logger.info("Transformed data saved in data/consistent_data.csv")
-
-    # Save the inconsistent data to a CSV file
-    inconsistent_data.drop(columns=["raw_name"]).to_csv("data/inconsistent_data.csv", index=False)
-    logger.info("Inconsistent data saved in data/inconsistent_data.csv")
-
-    return consistent_data, inconsistent_data
+    logger.info("Transformed %d records.", len(transformed_ram_kit_df))
+    return transformed_ram_kit_df
 
 
-def load_data(consistent_df: pd.DataFrame, inconsistent_df: pd.DataFrame) -> None:
+def load_data(
+    valid_records: list[Dict[str, Any]],
+    invalid_records: list[Dict[str, Any]],
+    etl_run_id: int,
+    engine: Any,
+    stores_success: list[str],
+) -> None:
     """
-    Loads transformed data into the database.
+    Loads validated records into the silver schema.
 
     Args:
-        consistent_df (pd.DataFrame): The DataFrame containing the consistent data to load.
-        inconsistent_df (pd.DataFrame): The DataFrame containing the inconsistent data to load.
+        valid_records: Records that passed Pydantic validation.
+        invalid_records: Records that failed validation (carry error_reason).
+        etl_run_id: The current ETL run id for traceability.
+        engine: SQLAlchemy engine to use for the connection.
+        stores_success: Store names that were scraped successfully.
     """
-    from db.connection import get_db_engine
-    from sqlalchemy import text
-
-    if consistent_df.empty and inconsistent_df.empty:
+    if not valid_records and not invalid_records:
         logger.info("No data to load into the database.")
         return
 
-    logger.info("Starting load process into the database...")
-    engine = get_db_engine()
+    logger.info("Starting load process into the silver schema...")
 
     with engine.begin() as conn:
-        # Get unique store names from both consistent and inconsistent data
-        stores_in_data = set()
-        if not consistent_df.empty:
-            stores_in_data.update(consistent_df["store"].dropna().unique())
-        if not inconsistent_df.empty:
-            stores_in_data.update(inconsistent_df["store"].dropna().unique())
+        conn.execute(text("SET search_path TO silver"))
 
-        # Register stores and cache their IDs
-        store_to_id_map: Dict[str, int] = {}
+        store_to_id = _upsert_stores(conn, set(stores_success))
 
-        # Retrieve existing stores
-        store_result = conn.execute(text("SELECT name, id FROM store"))
-        for name, store_id in store_result.fetchall():
-            store_to_id_map[name] = store_id
+        if valid_records:
+            product_id_map = _upsert_products(conn, valid_records)
+            _upsert_price_snapshots(conn, valid_records, product_id_map, store_to_id, etl_run_id)
 
-        new_stores = [s for s in stores_in_data if s not in store_to_id_map]
-        if new_stores:
-            for store_name in new_stores:
-                conn.execute(
-                    text("INSERT INTO store (name, country) VALUES (:name, 'Peru')"),
-                    {"name": store_name},
-                )
-            # Re-fetch store IDs after inserting new ones
-            store_result = conn.execute(text("SELECT name, id FROM store"))
-            for name, store_id in store_result.fetchall():
-                store_to_id_map[name] = store_id
-            logger.info(f"Successfully registered {len(new_stores)} new stores.")
-        else:
-            logger.info("No new stores detected.")
-
-        # Load consistent products
-        if not consistent_df.empty:
-            logger.info(f"Processing {len(consistent_df)} consistent records...")
-
-            # Resolve ram_id for each unique specification set (cache-first registration)
-            ram_id_map: Dict[
-                Tuple[str, Optional[str], int, int, int, int, bool, Optional[str]], int
-            ] = {}
-
-            # Retrieve all existing RAM specs to build the cache
-            ram_specs_result = conn.execute(text("""
-                SELECT id, brand, series, total_capacity_gb, ddr_gen, speed_mts, kit_modules, has_rgb, part_number
-                FROM ram_kit_specs
-            """))
-            for r in ram_specs_result.fetchall():
-                existing_key = (
-                    str(r[1]),
-                    None if r[2] is None else str(r[2]),
-                    int(r[3]),
-                    int(r[4]),
-                    int(r[5]),
-                    int(r[6]),
-                    bool(r[7]),
-                    None if r[8] is None else str(r[8]),
-                )
-                ram_id_map[existing_key] = r[0]
-
-            new_specs_count = 0
-
-            # Register unique RAM specifications and cache their IDs
-            for _, row in consistent_df.iterrows():
-                series_val = None if pd.isna(row["series"]) else str(row["series"])
-                pn_val = None if pd.isna(row["part_number"]) else str(row["part_number"])
-                key = (
-                    str(row["brand"]),
-                    series_val,
-                    int(row["total_capacity_gb"]),
-                    int(row["ddr_gen"]),
-                    int(row["speed_mts"]),
-                    int(row["kit_modules"]),
-                    bool(row["has_rgb"]),
-                    pn_val,
-                )
-
-                if key in ram_id_map:
-                    continue
-
-                ram_spec_query = text("""
-                    INSERT INTO ram_kit_specs (brand, series, total_capacity_gb, ddr_gen, speed_mts, kit_modules, has_rgb, part_number)
-                    VALUES (:brand, :series, :total_capacity_gb, :ddr_gen, :speed_mts, :kit_modules, :has_rgb, :part_number)
-                    RETURNING id;
-                """)
-
-                ram_id_result = conn.execute(
-                    ram_spec_query,
-                    {
-                        "brand": key[0],
-                        "series": key[1],
-                        "total_capacity_gb": key[2],
-                        "ddr_gen": key[3],
-                        "speed_mts": key[4],
-                        "kit_modules": key[5],
-                        "has_rgb": key[6],
-                        "part_number": key[7],
-                    },
-                ).fetchone()
-
-                if ram_id_result:
-                    ram_id_map[key] = ram_id_result[0]
-                    new_specs_count += 1
-
-            if new_specs_count > 0:
-                logger.info(f"Successfully registered {new_specs_count} new RAM specs.")
-            else:
-                logger.info("No new RAM specs detected.")
-
-            # Fetch the latest prices for all existing ram_id and store_id combinations to compare with new prices
-            latest_prices_query = text("""
-                SELECT DISTINCT ON (ram_id, store_id) ram_id, store_id, price 
-                FROM price_history 
-                ORDER BY ram_id, store_id, extraction_date DESC;
-            """)
-            latest_prices_res = conn.execute(latest_prices_query).fetchall()
-            latest_prices_cache: Dict[Tuple[int, int], float] = {
-                (row[0], row[1]): float(row[2]) for row in latest_prices_res
-            }
-
-            # Filter out identical prices and prepare multi-row insert list
-            price_inserts: List[Dict[str, Any]] = []
-            for _, row in consistent_df.iterrows():
-                store_id = store_to_id_map.get(row["store"])
-                if not store_id:
-                    continue
-
-                series_val = None if pd.isna(row["series"]) else str(row["series"])
-                pn_val = None if pd.isna(row["part_number"]) else str(row["part_number"])
-                key = (
-                    str(row["brand"]),
-                    series_val,
-                    int(row["total_capacity_gb"]),
-                    int(row["ddr_gen"]),
-                    int(row["speed_mts"]),
-                    int(row["kit_modules"]),
-                    bool(row["has_rgb"]),
-                    pn_val,
-                )
-                ram_id = ram_id_map.get(key)
-                if not ram_id:
-                    continue
-
-                new_price = float(row["price"])
-                latest_price = latest_prices_cache.get((ram_id, store_id))
-
-                # Check if price has changed or if it's a new listing
-                if latest_price is None or abs(latest_price - new_price) >= 0.01:
-                    price_inserts.append(
-                        {
-                            "ram_id": ram_id,
-                            "store_id": store_id,
-                            "price": new_price,
-                        }
-                    )
-
-            # Perform a multi-row insert of all price changes
-            if price_inserts:
-                insert_price_query = text("""
-                    INSERT INTO price_history (ram_id, store_id, price)
-                    VALUES (:ram_id, :store_id, :price)
-                    ON CONFLICT (ram_id, store_id, extraction_date) DO NOTHING;
-                """)
-                conn.execute(insert_price_query, price_inserts)
-                logger.info(
-                    f"Successfully loaded {len(price_inserts)} new price records into price history."
-                )
-            else:
-                logger.info("No price changes detected. Price history was not updated.")
-
-        # Load inconsistent products to unmapped_product (multi-row load)
-        if not inconsistent_df.empty:
-            logger.info(f"Processing {len(inconsistent_df)} inconsistent records...")
-            unmapped_inserts: List[Dict[str, Any]] = []
-
-            for _, row in inconsistent_df.iterrows():
-                store_id = store_to_id_map.get(row["store"])
-                if not store_id:
-                    continue
-
-                raw_name = str(row["raw_name"])
-                price_val = None if pd.isna(row["price"]) else float(row["price"])
-                unmapped_inserts.append(
-                    {"raw_name": raw_name, "store_id": store_id, "price": price_val}
-                )
-
-            if unmapped_inserts:
-                unmapped_query = text("""
-                    INSERT INTO unmapped_product (raw_name, store_id, price)
-                    VALUES (:raw_name, :store_id, :price)
-                    ON CONFLICT (raw_name, store_id)
-                    DO UPDATE SET
-                        price = EXCLUDED.price,
-                        last_seen = NOW();
-                """)
-                conn.execute(unmapped_query, unmapped_inserts)
-                logger.info(f"Successfully loaded {len(unmapped_inserts)} unmapped products.")
+        if invalid_records:
+            _insert_invalid_records(conn, invalid_records, store_to_id, etl_run_id)
 
     logger.info("Load process completed successfully.")
 
 
+def _upsert_stores(
+    conn: Any,
+    stores: set[str],
+) -> Dict[str, int]:
+    """Insert new stores and return a name→id mapping.
+
+    Args:
+        conn: Active database connection.
+        stores: Set of store names to ensure exist in the database.
+    """
+    if not stores:
+        return {}
+
+    # Count before insert to derive the actual number of newly added stores.
+    count_before = conn.execute(text("SELECT COUNT(*) FROM store")).fetchone()[0]
+
+    conn.execute(
+        text(
+            "INSERT INTO store (name, country) "
+            "VALUES (:name, 'Peru') ON CONFLICT (name) DO NOTHING"
+        ),
+        [{"name": s} for s in stores],
+    )
+
+    # Delta between counts gives only the stores that didn't exist before.
+    count_after = conn.execute(text("SELECT COUNT(*) FROM store")).fetchone()[0]
+    new_stores = count_after - count_before
+
+    result = conn.execute(text("SELECT name, id FROM store"))
+    store_to_id = {row[0]: row[1] for row in result.fetchall()}
+    logger.info("Stores: %d total, %d new.", len(store_to_id), new_stores)
+    return store_to_id
+
+
+def _upsert_products(
+    conn: Any,
+    valid_records: list[Dict[str, Any]],
+) -> Dict[Tuple[str, int, int], int]:
+    """Upsert products and return (part_number, capacity_gb, kit_modules) → id.
+
+    The composite key ensures that the same manufacturer PN in different
+    configurations (e.g., 16GB single vs 32GB 2x16 kit) are stored as
+    separate products.
+    """
+    # Load existing products to avoid unnecessary inserts.
+    result = conn.execute(
+        text("SELECT id, part_number, capacity_gb, kit_modules FROM product")
+    )
+    product_key_to_id: Dict[Tuple[str, int, int], int] = {}
+    for row in result.yield_per(500):
+        product_key_to_id[(row[1], row[2], row[3])] = row[0]
+
+    existing_keys = set(product_key_to_id.keys())
+    new_products: list[Dict[str, Any]] = []
+    new_product_keys: set[Tuple[str, int, int]] = set()
+
+    for rec in valid_records:
+        key = (rec["part_number"], rec["total_capacity_gb"], rec["kit_modules"])
+        if key not in existing_keys:
+            new_products.append(rec)
+            new_product_keys.add(key)
+
+    if new_products:
+        # ON CONFLICT updates brand/series/specs from the latest store data.
+        conn.execute(
+            text(
+                "INSERT INTO product (brand, series, capacity_gb, speed_mts, "
+                "ddr_gen, kit_modules, has_rgb, part_number) "
+                "VALUES (:brand, :series, :capacity_gb, :speed_mts, "
+                ":ddr_gen, :kit_modules, :has_rgb, :part_number) "
+                "ON CONFLICT (part_number, capacity_gb, kit_modules) DO UPDATE SET "
+                "brand = EXCLUDED.brand, "
+                "series = EXCLUDED.series, "
+                "speed_mts = EXCLUDED.speed_mts, "
+                "ddr_gen = EXCLUDED.ddr_gen, "
+                "has_rgb = EXCLUDED.has_rgb, "
+                "updated_at = NOW()"
+            ),
+            [
+                {
+                    "brand": r["brand"],
+                    "series": r.get("series"),
+                    "capacity_gb": r["total_capacity_gb"],
+                    "speed_mts": r["speed_mts"],
+                    "ddr_gen": r["ddr_gen"],
+                    "kit_modules": r["kit_modules"],
+                    "has_rgb": r["has_rgb"],
+                    "part_number": r["part_number"],
+                }
+                for r in new_products
+            ],
+        )
+
+        # Re-read the full table to get IDs for all products (including
+        # those that already existed).
+        result = conn.execute(
+            text("SELECT id, part_number, capacity_gb, kit_modules FROM product")
+        )
+        product_key_to_id = {}
+        for row in result.yield_per(500):
+            product_key_to_id[(row[1], row[2], row[3])] = row[0]
+        logger.info("Products: %d upserted.", len(new_product_keys))
+    else:
+        logger.info("Products: no changes.")
+
+    return product_key_to_id
+
+
+def _upsert_price_snapshots(
+    conn: Any,
+    valid_records: list[Dict[str, Any]],
+    product_key_to_id: Dict[Tuple[str, int, int], int],
+    store_to_id: Dict[str, int],
+    etl_run_id: int,
+) -> None:
+    """Implement SCD-2: close old snapshot if price changed, insert new.
+
+    Uses (part_number, capacity_gb, kit_modules) + store_name as lookup keys.
+    Deduplicates using (product_id, store_id) to handle multiple records for
+    the same product-store pair within a single run.
+    """
+    # Load all current snapshots to compare against new prices.
+    result = conn.execute(
+        text(
+            "SELECT p.part_number, p.capacity_gb, p.kit_modules, s.name, ps.price "
+            "FROM price_snapshot ps "
+            "JOIN product p ON ps.product_id = p.id "
+            "JOIN store s ON ps.store_id = s.id "
+            "WHERE ps.is_current = TRUE"
+        )
+    )
+    current_prices: Dict[Tuple[str, int, int, str], Decimal] = {
+        (row[0], row[1], row[2], row[3]): Decimal(str(row[4])).quantize(_PRICE_Q)
+        for row in result.fetchall()
+    }
+
+    # to_close and to_insert use (product_id, store_id) as key for
+    # deduplication within the same run.
+    to_close: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    to_insert: Dict[Tuple[int, int], Dict[str, Any]] = {}
+
+    for rec in valid_records:
+        pn = rec["part_number"]
+        cap = rec["total_capacity_gb"]
+        kit = rec["kit_modules"]
+        store = rec["store"]
+        product_id = product_key_to_id.get((pn, cap, kit))
+        store_id = store_to_id.get(store)
+        if not product_id or not store_id:
+            continue
+
+        # Quantize both prices to 2 decimals for exact comparison.
+        new_price = Decimal(str(rec["price"])).quantize(_PRICE_Q)
+        current_price = current_prices.get((pn, cap, kit, store))
+
+        # No change — skip entirely.
+        if current_price is not None and current_price == new_price:
+            continue
+
+        key = (product_id, store_id)
+
+        # Mark the current snapshot for closing (only once per product-store).
+        if current_price is not None and key not in to_close:
+            to_close[key] = {"product_id": product_id, "store_id": store_id}
+
+        # Keep only the first record for each product-store pair in a run.
+        if key not in to_insert:
+            to_insert[key] = {
+                "product_id": product_id,
+                "store_id": store_id,
+                "etl_run_id": etl_run_id,
+                "price": new_price,
+            }
+
+    if to_close:
+        conn.execute(
+            text(
+                "UPDATE price_snapshot "
+                "SET valid_to = NOW(), is_current = FALSE "
+                "WHERE product_id = :product_id AND store_id = :store_id AND is_current = TRUE"
+            ),
+            list(to_close.values()),
+        )
+
+    if to_insert:
+        conn.execute(
+            text(
+                "INSERT INTO price_snapshot (product_id, store_id, price, etl_run_id) "
+                "VALUES (:product_id, :store_id, :price, :etl_run_id)"
+            ),
+            list(to_insert.values()),
+        )
+        logger.info(
+            "Price snapshots: %d closed, %d opened.", len(to_close), len(to_insert)
+        )
+    else:
+        logger.info("Price snapshots: no price changes detected.")
+
+
+def _insert_invalid_records(
+    conn: Any,
+    invalid_records: list[Dict[str, Any]],
+    store_to_id: Dict[str, int],
+    etl_run_id: int,
+) -> None:
+    """Insert invalid records into the quarantine table.
+
+    Uses ON CONFLICT (raw_name, store_name) to avoid duplicate rows for
+    the same invalid record across runs; updates last_seen and error_reason
+    instead.
+    """
+    inserts = []
+    for rec in invalid_records:
+        inserts.append(
+            {
+                "raw_name": rec.get("raw_name", ""),
+                "store_name": rec.get("store", ""),
+                "price": rec.get("price"),
+                "error_reason": rec.get("error_reason", ""),
+                "etl_run_id": etl_run_id,
+            }
+        )
+
+    if inserts:
+        conn.execute(
+            text(
+                "INSERT INTO invalid_records (raw_name, store_name, price, error_reason, etl_run_id) "
+                "VALUES (:raw_name, :store_name, :price, :error_reason, :etl_run_id) "
+                "ON CONFLICT (raw_name, store_name) DO UPDATE SET "
+                "last_seen = NOW(), price = EXCLUDED.price, error_reason = EXCLUDED.error_reason, "
+                "etl_run_id = EXCLUDED.etl_run_id"
+            ),
+            inserts,
+        )
+        logger.info("Invalid records: %d upserted.", len(inserts))
+
+
+def register_etl_run_start(engine: Any) -> int:
+    """Insert a new row in silver.etl_runs with status 'running'.
+
+    Args:
+        engine: SQLAlchemy engine to use for the connection.
+
+    Returns:
+        The id of the newly created ETL run.
+    """
+    with engine.begin() as conn:
+        conn.execute(text("SET search_path TO silver"))
+        result = conn.execute(
+            text(
+                "INSERT INTO etl_runs (status, triggered_by) "
+                "VALUES ('running', 'schedule') RETURNING id"
+            )
+        )
+        run_id = result.fetchone()[0]
+    logger.info("ETL run started: id=%d", run_id)
+    return run_id
+
+
+def register_etl_run_end(
+    engine: Any,
+    run_id: int,
+    valid_count: int,
+    invalid_count: int,
+    raw_count: int,
+    stores_success: list[str],
+    stores_failed: list[str],
+) -> None:
+    """Update the ETL run row with final metrics.
+
+    Args:
+        engine: SQLAlchemy engine to use for the connection.
+        run_id: The id returned by ``register_etl_run_start``.
+        valid_count: Number of records that passed validation.
+        invalid_count: Number of records that failed validation.
+        raw_count: Total number of raw records extracted.
+        stores_success: Store names that were scraped successfully.
+        stores_failed: Store names that failed during scraping.
+    """
+    with engine.begin() as conn:
+        conn.execute(text("SET search_path TO silver"))
+        conn.execute(
+            text(
+                "UPDATE etl_runs "
+                "SET finished_at = NOW(), "
+                "    duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at)), "
+                "    status = 'success', "
+                "    raw_records = :raw_records, "
+                "    valid_records = :valid_records, "
+                "    invalid_records = :invalid_records, "
+                "    stores_success = :stores_success, "
+                "    stores_failed = :stores_failed "
+                "WHERE id = :run_id"
+            ),
+            {
+                "run_id": run_id,
+                "raw_records": raw_count,
+                "valid_records": valid_count,
+                "invalid_records": invalid_count,
+                "stores_success": stores_success,
+                "stores_failed": stores_failed,
+            },
+        )
+    logger.info(
+        "ETL run %d finished: raw=%d (valid=%d, invalid=%d)",
+        run_id,
+        raw_count,
+        valid_count,
+        invalid_count,
+    )
+
+
 if __name__ == "__main__":
+    from db.connection import get_db_engine
+
     logger.info("Starting ETL process...")
-    bronze_key = extract_data()
-    raw_data_df = download_dataframe(bronze_key)
-    consistent_data, inconsistent_data = transform_data(raw_data_df)
-    load_data(consistent_data, inconsistent_data)
-    logger.info("ETL process completed")
+    engine = get_db_engine()
+
+    # Register the run before any work; marked as 'failed' on exception.
+    run_id = register_etl_run_start(engine)
+    try:
+        bronze_key, stores_success, stores_failed = extract_data()
+
+        # Re-read the bronze Parquet as the single source of truth.
+        raw_data_df = download_dataframe(bronze_key)
+        transformed_df = transform_data(raw_data_df)
+        valid, invalid = split_valid_invalid(transformed_df.to_dict("records"))
+        load_data(valid, invalid, run_id, engine, stores_success)
+        register_etl_run_end(
+            engine,
+            run_id,
+            valid_count=len(valid),
+            invalid_count=len(invalid),
+            raw_count=len(transformed_df),
+            stores_success=stores_success,
+            stores_failed=stores_failed,
+        )
+        logger.info("ETL process completed")
+    except Exception:
+        # Mark the run as failed so it's visible in etl_runs history.
+        with engine.begin() as conn:
+            conn.execute(text("SET search_path TO silver"))
+            conn.execute(
+                text("UPDATE etl_runs SET status = 'failed', finished_at = NOW() WHERE id = :id"),
+                {"id": run_id},
+            )
+        logger.exception("ETL process failed")
+        raise

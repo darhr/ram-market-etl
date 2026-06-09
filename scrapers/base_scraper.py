@@ -13,6 +13,12 @@ class BaseScraper(ABC):
     Abstract base class for web scrapers.
     """
 
+    @property
+    @abstractmethod
+    def store_name(self) -> str:
+        """Return the canonical store name used in scraped records."""
+        ...
+
     @abstractmethod
     def scrape_all(self) -> List[Dict[str, Any]]:
         """
