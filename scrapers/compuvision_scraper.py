@@ -18,6 +18,10 @@ class CompuvisionScraper(BaseScraper):
     Scraper class for Compuvision website.
     """
 
+    @property
+    def store_name(self) -> str:
+        return "compuvision"
+
     def scrape_all(self) -> List[Dict[str, Any]]:
         """
         Scrape RAM memories information from Compuvision website.
@@ -78,11 +82,7 @@ class CompuvisionScraper(BaseScraper):
                 name = item["nombre"]
                 price = item["precio"]
                 extracted_products.append(
-                    {
-                    "name": name, 
-                    "price": float(price), 
-                    "store": "compuvision"
-                    }
+                    {"name": name, "price": float(price), "store": "compuvision"}
                 )
 
             page_number += 1

@@ -19,6 +19,10 @@ class SercoplusScraper(BaseScraper):
     Scraper class for Sercoplus website.
     """
 
+    @property
+    def store_name(self) -> str:
+        return "sercoplus"
+
     def scrape_all(self) -> List[Dict[str, Any]]:
         """
         Scrape RAM memories information from Sercoplus website.
@@ -49,7 +53,7 @@ class SercoplusScraper(BaseScraper):
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error retrieving page: {e}")
-                break
+                raise
 
             products_elements = response.json().get("products", [])
 
