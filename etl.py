@@ -368,13 +368,16 @@ def _upsert_products(
     conn: Any,
     valid_records: list[Dict[str, Any]],
 ) -> Dict[Tuple[str, int, int], int]:
-    """Upsert products and return (part_number, capacity_gb, kit_modules) → id.
-
-    The composite key ensures that the same manufacturer PN in different
-    configurations (e.g., 16GB single vs 32GB 2x16 kit) are stored as
-    separate products.
     """
-    # Load existing products to avoid unnecessary inserts.
+    Upsert products and return (part_number, capacity_gb, kit_modules) -> id
+    to ensure the same PN does not necessarily mean the same product.
+    
+    Uses INSERT ON CONFLICT DO UPDATE so that ALL records (both new and
+    existing) are processed. This ensures that changes in brand/series
+    mappings (e.g., from an updated BRAND_SERIES_MAP) propagate to
+    products that already exist in the database.
+    """
+    # Load existing products to detect genuinely new ones.
     result = conn.execute(
         text("SELECT id, part_number, capacity_gb, kit_modules FROM product")
     )
@@ -383,17 +386,32 @@ def _upsert_products(
         product_key_to_id[(row[1], row[2], row[3])] = row[0]
 
     existing_keys = set(product_key_to_id.keys())
-    new_products: list[Dict[str, Any]] = []
     new_product_keys: set[Tuple[str, int, int]] = set()
+    all_records_params: list[Dict[str, Any]] = []
 
     for rec in valid_records:
         key = (rec["part_number"], rec["total_capacity_gb"], rec["kit_modules"])
         if key not in existing_keys:
-            new_products.append(rec)
             new_product_keys.add(key)
+        all_records_params.append(
+            {
+                "brand": rec["brand"],
+                "series": rec.get("series"),
+                "capacity_gb": rec["total_capacity_gb"],
+                "speed_mts": rec["speed_mts"],
+                "ddr_gen": rec["ddr_gen"],
+                "kit_modules": rec["kit_modules"],
+                "has_rgb": rec["has_rgb"],
+                "part_number": rec["part_number"],
+            }
+        )
 
-    if new_products:
-        # ON CONFLICT updates brand/series/specs from the latest store data.
+    if all_records_params:
+        # Capture the DB timestamp before the upsert to later count how many
+        # products were actually inserted or had their spec fields changed.
+        before_ts = conn.execute(text("SELECT NOW()")).fetchone()[0]
+
+        # ON CONFLICT handles both new inserts and updates for existing rows.
         conn.execute(
             text(
                 "INSERT INTO product (brand, series, capacity_gb, speed_mts, "
@@ -406,32 +424,39 @@ def _upsert_products(
                 "speed_mts = EXCLUDED.speed_mts, "
                 "ddr_gen = EXCLUDED.ddr_gen, "
                 "has_rgb = EXCLUDED.has_rgb, "
-                "updated_at = NOW()"
+                "updated_at = CASE WHEN product.brand IS DISTINCT FROM EXCLUDED.brand "
+                "OR product.series IS DISTINCT FROM EXCLUDED.series "
+                "OR product.speed_mts IS DISTINCT FROM EXCLUDED.speed_mts "
+                "OR product.ddr_gen IS DISTINCT FROM EXCLUDED.ddr_gen "
+                "OR product.has_rgb IS DISTINCT FROM EXCLUDED.has_rgb "
+                "THEN NOW() ELSE product.updated_at END"
             ),
-            [
-                {
-                    "brand": r["brand"],
-                    "series": r.get("series"),
-                    "capacity_gb": r["total_capacity_gb"],
-                    "speed_mts": r["speed_mts"],
-                    "ddr_gen": r["ddr_gen"],
-                    "kit_modules": r["kit_modules"],
-                    "has_rgb": r["has_rgb"],
-                    "part_number": r["part_number"],
-                }
-                for r in new_products
-            ],
+            all_records_params,
         )
 
-        # Re-read the full table to get IDs for all products (including
-        # those that already existed).
-        result = conn.execute(
-            text("SELECT id, part_number, capacity_gb, kit_modules FROM product")
+        # Count how many products were actually inserted or had spec changes
+        # (the CASE WHEN above leaves updated_at unchanged when nothing
+        # changed, so they won't be counted).
+        inserted_count = conn.execute(
+            text("SELECT COUNT(*) FROM product WHERE updated_at >= :ts"),
+            {"ts": before_ts},
+        ).fetchone()[0]
+
+        # Re-read only when genuinely new products were inserted.
+        if new_product_keys:
+            result = conn.execute(
+                text("SELECT id, part_number, capacity_gb, kit_modules FROM product")
+            )
+            product_key_to_id = {}
+            for row in result.yield_per(500):
+                product_key_to_id[(row[1], row[2], row[3])] = row[0]
+
+        logger.info(
+            "Products: %d upserted (inserted=%d, updated=%d)",
+            inserted_count + len(new_product_keys),
+            inserted_count,
+            len(new_product_keys),
         )
-        product_key_to_id = {}
-        for row in result.yield_per(500):
-            product_key_to_id[(row[1], row[2], row[3])] = row[0]
-        logger.info("Products: %d upserted.", len(new_product_keys))
     else:
         logger.info("Products: no changes.")
 
