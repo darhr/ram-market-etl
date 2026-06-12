@@ -22,7 +22,10 @@ from etl import (
     register_etl_run_start,
 )
 
-def _mock_execute_result(fetchone_val: Any = None, fetchall_val: list | None = None, yield_rows: list | None = None):
+
+def _mock_execute_result(
+    fetchone_val: Any = None, fetchall_val: list | None = None, yield_rows: list | None = None
+):
     """Build a mock result object for conn.execute()."""
     result = MagicMock()
     if fetchone_val is not None:
@@ -45,9 +48,9 @@ class TestUpsertStores:
     def test_all_new_stores(self) -> None:
         conn = MagicMock()
         conn.execute.side_effect = [
-            _mock_execute_result(fetchone_val=[0]),       # COUNT before
-            MagicMock(),                                   # INSERT
-            _mock_execute_result(fetchone_val=[3]),       # COUNT after
+            _mock_execute_result(fetchone_val=[0]),  # COUNT before
+            MagicMock(),  # INSERT
+            _mock_execute_result(fetchone_val=[3]),  # COUNT after
             _mock_execute_result(fetchall_val=[("cyc", 1), ("compuvision", 2), ("sercoplus", 3)]),
         ]
         result = _upsert_stores(conn, {"cyc", "compuvision", "sercoplus"})
@@ -57,9 +60,9 @@ class TestUpsertStores:
     def test_no_new_stores(self) -> None:
         conn = MagicMock()
         conn.execute.side_effect = [
-            _mock_execute_result(fetchone_val=[3]),       # COUNT before
-            MagicMock(),                                   # INSERT (all conflict)
-            _mock_execute_result(fetchone_val=[3]),       # COUNT after - same
+            _mock_execute_result(fetchone_val=[3]),  # COUNT before
+            MagicMock(),  # INSERT (all conflict)
+            _mock_execute_result(fetchone_val=[3]),  # COUNT after - same
             _mock_execute_result(fetchall_val=[("cyc", 1), ("compuvision", 2), ("sercoplus", 3)]),
         ]
         result = _upsert_stores(conn, {"cyc", "compuvision"})
@@ -76,21 +79,23 @@ class TestUpsertProducts:
         existing_rows = [(100, "KF560C36BBE16", 16, 1)]
         conn.execute.side_effect = [
             _mock_execute_result(yield_rows=existing_rows),  # SELECT existing products
-            _mock_execute_result(fetchone_val=[NOW]),         # SELECT NOW()
-            MagicMock(),                                      # INSERT ON CONFLICT
-            _mock_execute_result(fetchone_val=[0]),           # SELECT COUNT (0 updates)
+            _mock_execute_result(fetchone_val=[NOW]),  # SELECT NOW()
+            MagicMock(),  # INSERT ON CONFLICT
+            _mock_execute_result(fetchone_val=[0]),  # SELECT COUNT (0 updates)
         ]
 
-        records = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "brand": "KINGSTON",
-            "series": "FURY",
-            "speed_mts": 6000,
-            "ddr_gen": 5,
-            "has_rgb": True,
-        }]
+        records = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "brand": "KINGSTON",
+                "series": "FURY",
+                "speed_mts": 6000,
+                "ddr_gen": 5,
+                "has_rgb": True,
+            }
+        ]
         result = _upsert_products(conn, records)
         assert result == {("KF560C36BBE16", 16, 1): 100}
         assert conn.execute.call_count == 4
@@ -98,23 +103,25 @@ class TestUpsertProducts:
     def test_new_products_trigger_insert_and_reread(self) -> None:
         conn = MagicMock()
         conn.execute.side_effect = [
-            _mock_execute_result(yield_rows=[]),                        # SELECT existing products
-            _mock_execute_result(fetchone_val=[NOW]),                    # SELECT NOW()
-            MagicMock(),                                                 # INSERT ON CONFLICT
-            _mock_execute_result(fetchone_val=[1]),                      # SELECT COUNT (1 insert)
+            _mock_execute_result(yield_rows=[]),  # SELECT existing products
+            _mock_execute_result(fetchone_val=[NOW]),  # SELECT NOW()
+            MagicMock(),  # INSERT ON CONFLICT
+            _mock_execute_result(fetchone_val=[1]),  # SELECT COUNT (1 insert)
             _mock_execute_result(yield_rows=[(200, "KF560C36BBE16", 16, 1)]),  # SELECT re-read
         ]
 
-        records = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "brand": "KINGSTON",
-            "series": "FURY",
-            "speed_mts": 6000,
-            "ddr_gen": 5,
-            "has_rgb": True,
-        }]
+        records = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "brand": "KINGSTON",
+                "series": "FURY",
+                "speed_mts": 6000,
+                "ddr_gen": 5,
+                "has_rgb": True,
+            }
+        ]
         result = _upsert_products(conn, records)
         assert result == {("KF560C36BBE16", 16, 1): 200}
         assert conn.execute.call_count == 5
@@ -125,21 +132,23 @@ class TestUpsertProducts:
         existing_rows = [(100, "KF560C36BBE16", 16, 1)]
         conn.execute.side_effect = [
             _mock_execute_result(yield_rows=existing_rows),  # SELECT existing
-            _mock_execute_result(fetchone_val=[NOW]),         # SELECT NOW()
-            MagicMock(),                                      # INSERT ON CONFLICT (update)
-            _mock_execute_result(fetchone_val=[1]),           # SELECT COUNT (1 update)
+            _mock_execute_result(fetchone_val=[NOW]),  # SELECT NOW()
+            MagicMock(),  # INSERT ON CONFLICT (update)
+            _mock_execute_result(fetchone_val=[1]),  # SELECT COUNT (1 update)
         ]
 
-        records = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "brand": "HYPERX",
-            "series": "FURY",
-            "speed_mts": 6000,
-            "ddr_gen": 5,
-            "has_rgb": True,
-        }]
+        records = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "brand": "HYPERX",
+                "series": "FURY",
+                "speed_mts": 6000,
+                "ddr_gen": 5,
+                "has_rgb": True,
+            }
+        ]
         result = _upsert_products(conn, records)
         assert result == {("KF560C36BBE16", 16, 1): 100}
         assert conn.execute.call_count == 4
@@ -149,14 +158,16 @@ class TestUpsertProducts:
         conn = MagicMock()
         existing_rows = [(100, "KF560C36BBE16", 16, 1)]
         conn.execute.side_effect = [
-            _mock_execute_result(yield_rows=existing_rows),   # SELECT existing
-            _mock_execute_result(fetchone_val=[NOW]),          # SELECT NOW()
-            MagicMock(),                                       # INSERT ON CONFLICT
-            _mock_execute_result(fetchone_val=[1]),            # SELECT COUNT (1 new)
-            _mock_execute_result(yield_rows=[                  # SELECT re-read
-                (100, "KF560C36BBE16", 16, 1),
-                (200, "CMH32GX5M2B6000Z30", 32, 2),
-            ]),
+            _mock_execute_result(yield_rows=existing_rows),  # SELECT existing
+            _mock_execute_result(fetchone_val=[NOW]),  # SELECT NOW()
+            MagicMock(),  # INSERT ON CONFLICT
+            _mock_execute_result(fetchone_val=[1]),  # SELECT COUNT (1 new)
+            _mock_execute_result(
+                yield_rows=[  # SELECT re-read
+                    (100, "KF560C36BBE16", 16, 1),
+                    (200, "CMH32GX5M2B6000Z30", 32, 2),
+                ]
+            ),
         ]
 
         records = [
@@ -201,13 +212,15 @@ class TestUpsertPriceSnapshots:
 
         product_map = {("KF560C36BBE16", 16, 1): 100}
         store_map = {"cyc": 1}
-        records = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "store": "cyc",
-            "price": Decimal("89.99"),
-        }]
+        records = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "store": "cyc",
+                "price": Decimal("89.99"),
+            }
+        ]
         _upsert_price_snapshots(conn, records, product_map, store_map, 1)
         # Only the SELECT was called
         assert conn.execute.call_count == 1
@@ -219,13 +232,15 @@ class TestUpsertPriceSnapshots:
 
         product_map = {("KF560C36BBE16", 16, 1): 100}
         store_map = {"cyc": 1}
-        records = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "store": "cyc",
-            "price": Decimal("89.99"),
-        }]
+        records = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "store": "cyc",
+                "price": Decimal("89.99"),
+            }
+        ]
         _upsert_price_snapshots(conn, records, product_map, store_map, 1)
         assert conn.execute.call_count == 2  # SELECT + INSERT
 
@@ -234,20 +249,22 @@ class TestUpsertPriceSnapshots:
         conn = MagicMock()
         current = [("KF560C36BBE16", 16, 1, "cyc", 79.99)]
         conn.execute.side_effect = [
-            _mock_execute_result(fetchall_val=current),   # SELECT current
-            MagicMock(),                                   # UPDATE close
-            MagicMock(),                                   # INSERT new
+            _mock_execute_result(fetchall_val=current),  # SELECT current
+            MagicMock(),  # UPDATE close
+            MagicMock(),  # INSERT new
         ]
 
         product_map = {("KF560C36BBE16", 16, 1): 100}
         store_map = {"cyc": 1}
-        records = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "store": "cyc",
-            "price": Decimal("89.99"),
-        }]
+        records = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "store": "cyc",
+                "price": Decimal("89.99"),
+            }
+        ]
         _upsert_price_snapshots(conn, records, product_map, store_map, 1)
         assert conn.execute.call_count == 3  # SELECT + UPDATE + INSERT
 
@@ -285,7 +302,12 @@ class TestInsertInvalidRecords:
     def test_with_records_executes_insert(self) -> None:
         conn = MagicMock()
         records = [
-            {"raw_name": "BAD RAM", "store": "cyc", "price": 29.99, "error_reason": "brand: required"},
+            {
+                "raw_name": "BAD RAM",
+                "store": "cyc",
+                "price": 29.99,
+                "error_reason": "brand: required",
+            },
         ]
         _insert_invalid_records(conn, records, {"cyc": 1}, 1)
         conn.execute.assert_called_once()
@@ -310,8 +332,8 @@ class TestRegisterEtlRunStart:
 
         # First execute: SET search_path, second: INSERT RETURNING id
         conn.execute.side_effect = [
-            MagicMock(),                                # SET search_path
-            _mock_execute_result(fetchone_val=[42]),    # INSERT RETURNING id
+            MagicMock(),  # SET search_path
+            _mock_execute_result(fetchone_val=[42]),  # INSERT RETURNING id
         ]
         result = register_etl_run_start(engine)
         assert result == 42
@@ -330,9 +352,15 @@ class TestRegisterEtlRunEnd:
             MagicMock(),  # SET search_path
             MagicMock(),  # UPDATE etl_runs
         ]
-        register_etl_run_end(engine, 1, valid_count=98, invalid_count=4,
-                             raw_count=102, stores_success=["cyc"],
-                             stores_failed=["sercoplus"])
+        register_etl_run_end(
+            engine,
+            1,
+            valid_count=98,
+            invalid_count=4,
+            raw_count=102,
+            stores_success=["cyc"],
+            stores_failed=["sercoplus"],
+        )
         assert conn.execute.call_count == 2
 
 
@@ -350,18 +378,20 @@ class TestLoadData:
         engine.begin.return_value.__enter__ = MagicMock(return_value=conn)
         engine.begin.return_value.__exit__ = MagicMock(return_value=False)
 
-        valid = [{
-            "part_number": "KF560C36BBE16",
-            "total_capacity_gb": 16,
-            "kit_modules": 1,
-            "brand": "KINGSTON",
-            "series": "FURY",
-            "speed_mts": 6000,
-            "ddr_gen": 5,
-            "has_rgb": True,
-            "store": "cyc",
-            "price": Decimal("89.99"),
-        }]
+        valid = [
+            {
+                "part_number": "KF560C36BBE16",
+                "total_capacity_gb": 16,
+                "kit_modules": 1,
+                "brand": "KINGSTON",
+                "series": "FURY",
+                "speed_mts": 6000,
+                "ddr_gen": 5,
+                "has_rgb": True,
+                "store": "cyc",
+                "price": Decimal("89.99"),
+            }
+        ]
 
         # Mock all the internal execute calls:
         # SET search_path
@@ -369,18 +399,18 @@ class TestLoadData:
         # _upsert_products: SELECT, SELECT NOW, ON CONFLICT, SELECT COUNT, re-read
         # _upsert_price_snapshots: SELECT current, INSERT
         results = [
-            MagicMock(),                                # SET search_path
-            _mock_execute_result(fetchone_val=[0]),     # COUNT stores before
-            MagicMock(),                                # INSERT stores
-            _mock_execute_result(fetchone_val=[1]),     # COUNT stores after
+            MagicMock(),  # SET search_path
+            _mock_execute_result(fetchone_val=[0]),  # COUNT stores before
+            MagicMock(),  # INSERT stores
+            _mock_execute_result(fetchone_val=[1]),  # COUNT stores after
             _mock_execute_result(fetchall_val=[("cyc", 1)]),  # SELECT stores
-            _mock_execute_result(yield_rows=[]),        # SELECT existing products
-            _mock_execute_result(fetchone_val=[NOW]),   # SELECT NOW()
-            MagicMock(),                                # INSERT ON CONFLICT
-            _mock_execute_result(fetchone_val=[1]),     # SELECT COUNT
+            _mock_execute_result(yield_rows=[]),  # SELECT existing products
+            _mock_execute_result(fetchone_val=[NOW]),  # SELECT NOW()
+            MagicMock(),  # INSERT ON CONFLICT
+            _mock_execute_result(fetchone_val=[1]),  # SELECT COUNT
             _mock_execute_result(yield_rows=[(100, "KF560C36BBE16", 16, 1)]),  # SELECT re-read
-            _mock_execute_result(fetchall_val=[]),      # SELECT current prices
-            MagicMock(),                                # INSERT price snapshot
+            _mock_execute_result(fetchall_val=[]),  # SELECT current prices
+            MagicMock(),  # INSERT price snapshot
         ]
         conn.execute.side_effect = results
 

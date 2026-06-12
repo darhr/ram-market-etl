@@ -82,11 +82,7 @@ class CompuvisionScraper(BaseScraper):
                 name = item["nombre"]
                 price = item["precio"]
                 extracted_products.append(
-                    {
-                    "name": name, 
-                    "price": float(price), 
-                    "store": "compuvision"
-                    }
+                    {"name": name, "price": float(price), "store": "compuvision"}
                 )
 
             page_number += 1

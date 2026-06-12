@@ -371,16 +371,14 @@ def _upsert_products(
     """
     Upsert products and return (part_number, capacity_gb, kit_modules) -> id
     to ensure the same PN does not necessarily mean the same product.
-    
+
     Uses INSERT ON CONFLICT DO UPDATE so that ALL records (both new and
     existing) are processed. This ensures that changes in brand/series
     mappings (e.g., from an updated BRAND_SERIES_MAP) propagate to
     products that already exist in the database.
     """
     # Load existing products to detect genuinely new ones.
-    result = conn.execute(
-        text("SELECT id, part_number, capacity_gb, kit_modules FROM product")
-    )
+    result = conn.execute(text("SELECT id, part_number, capacity_gb, kit_modules FROM product"))
     product_key_to_id: Dict[Tuple[str, int, int], int] = {}
     for row in result.yield_per(500):
         product_key_to_id[(row[1], row[2], row[3])] = row[0]
@@ -547,9 +545,7 @@ def _upsert_price_snapshots(
             ),
             list(to_insert.values()),
         )
-        logger.info(
-            "Price snapshots: %d closed, %d opened.", len(to_close), len(to_insert)
-        )
+        logger.info("Price snapshots: %d closed, %d opened.", len(to_close), len(to_insert))
     else:
         logger.info("Price snapshots: no price changes detected.")
 
