@@ -449,11 +449,12 @@ def _upsert_products(
             for row in result.yield_per(500):
                 product_key_to_id[(row[1], row[2], row[3])] = row[0]
 
+        # "inserted_count" refers to products that have been updated or inserted
         logger.info(
             "Products: %d upserted (inserted=%d, updated=%d)",
-            inserted_count + len(new_product_keys),
             inserted_count,
             len(new_product_keys),
+            inserted_count - len(new_product_keys)
         )
     else:
         logger.info("Products: no changes.")
