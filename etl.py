@@ -17,9 +17,15 @@ import os
 from sqlalchemy import text
 from utils.storage import upload_dataframe, download_dataframe
 from utils.validators import split_valid_invalid
+import time
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# UTC timestamps for logs
+logging.Formatter.converter = time.gmtime
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+)
+logger = logging.getLogger("__name__")
 
 # Price quantizer - round half up to 2 decimal places
 _PRICE_Q = Decimal("0.01")
