@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+
 from utils.validators import RamKitRecord, split_valid_invalid
 
 

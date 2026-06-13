@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from etl import (
     extract_brand,
     extract_part_number,
