@@ -4,12 +4,14 @@ Sercoplus Web Scraper Module.
 This module provides a class to handle RAM memories information, from "Sercoplus" store website.
 """
 
-from .base_scraper import BaseScraper
-import requests
-from typing import List, Dict, Any
-import re
-import cloudscraper
 import logging
+import re
+from typing import Any, Dict, List
+
+import cloudscraper
+import requests
+
+from .base_scraper import BaseScraper
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class SercoplusScraper(BaseScraper):
 
             # Instruct the server to return JSON instead of HTML
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",  # noqa: E501
                 "X-Requested-With": "XMLHttpRequest",
                 "Accept": "application/json, text/javascript, */*; q=0.01",
             }

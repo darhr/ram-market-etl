@@ -7,19 +7,27 @@ loads it into the database.
 """
 
 import logging
-import re
-from decimal import Decimal
-from typing import List, Dict, Any, Optional, Tuple
-from scrapers.factory import get_all_scrapers
-import pandas as pd
-from rapidfuzz import process, fuzz
 import os
+import re
+import time
+from decimal import Decimal
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
+from rapidfuzz import fuzz, process
 from sqlalchemy import text
-from utils.storage import upload_dataframe, download_dataframe
+
+from scrapers.factory import get_all_scrapers
+from utils.storage import download_dataframe, upload_dataframe
 from utils.validators import split_valid_invalid
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# UTC timestamps for logs
+logging.Formatter.converter = time.gmtime
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+)
+logger = logging.getLogger("__name__")
 
 # Price quantizer - round half up to 2 decimal places
 _PRICE_Q = Decimal("0.01")
@@ -135,9 +143,12 @@ def extract_series(name: str) -> Optional[str]:
     Returns:
         Optional[str]: The extracted series if found, else None.
     """
+
     # partial_ratio covers substrings; token_set_ratio covers typos and extra noise.
     # We take the best of both for each candidate.
-    scorer = lambda a, b, **kw: max(fuzz.partial_ratio(a, b), fuzz.token_set_ratio(a, b))
+    def scorer(a: str, b: str, **kw: Any) -> int:
+        return max(fuzz.partial_ratio(a, b), fuzz.token_set_ratio(a, b))
+
     match = process.extractOne(name, all_series, scorer=scorer, score_cutoff=80)
 
     if match:
@@ -161,8 +172,11 @@ def extract_brand(name: str) -> Optional[str]:
     Returns:
         Optional[str]: The extracted brand if found, else None.
     """
+
     # Same dual approach for consistency.
-    scorer = lambda a, b, **kw: max(fuzz.partial_ratio(a, b), fuzz.token_set_ratio(a, b))
+    def scorer(a: str, b: str, **kw: Any) -> int:
+        return max(fuzz.partial_ratio(a, b), fuzz.token_set_ratio(a, b))
+
     match = process.extractOne(name, all_brands, scorer=scorer, score_cutoff=80)
 
     return match[0] if match else None
@@ -348,8 +362,7 @@ def _upsert_stores(
 
     conn.execute(
         text(
-            "INSERT INTO store (name, country) "
-            "VALUES (:name, 'Peru') ON CONFLICT (name) DO NOTHING"
+            "INSERT INTO store (name, country) VALUES (:name, 'Peru') ON CONFLICT (name) DO NOTHING"
         ),
         [{"name": s} for s in stores],
     )
@@ -449,11 +462,12 @@ def _upsert_products(
             for row in result.yield_per(500):
                 product_key_to_id[(row[1], row[2], row[3])] = row[0]
 
+        # "inserted_count" refers to products that have been updated or inserted
         logger.info(
             "Products: %d upserted (inserted=%d, updated=%d)",
-            inserted_count + len(new_product_keys),
             inserted_count,
             len(new_product_keys),
+            inserted_count - len(new_product_keys),
         )
     else:
         logger.info("Products: no changes.")
@@ -577,11 +591,13 @@ def _insert_invalid_records(
     if inserts:
         conn.execute(
             text(
-                "INSERT INTO invalid_records (raw_name, store_name, price, error_reason, etl_run_id) "
-                "VALUES (:raw_name, :store_name, :price, :error_reason, :etl_run_id) "
-                "ON CONFLICT (raw_name, store_name) DO UPDATE SET "
-                "last_seen = NOW(), price = EXCLUDED.price, error_reason = EXCLUDED.error_reason, "
-                "etl_run_id = EXCLUDED.etl_run_id"
+                "INSERT INTO invalid_records"
+                " (raw_name, store_name, price, error_reason, etl_run_id)"
+                " VALUES (:raw_name, :store_name, :price, :error_reason, :etl_run_id)"
+                " ON CONFLICT (raw_name, store_name) DO UPDATE SET"
+                " last_seen = NOW(), price = EXCLUDED.price,"
+                " error_reason = EXCLUDED.error_reason,"
+                " etl_run_id = EXCLUDED.etl_run_id"
             ),
             inserts,
         )

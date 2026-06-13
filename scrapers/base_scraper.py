@@ -5,7 +5,7 @@ Defines the interface that all specific store scrapers must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 
 class BaseScraper(ABC):

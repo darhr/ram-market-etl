@@ -1,0 +1,27 @@
+# Python environment
+.venv/
+
+# Python cache
+__pycache__/
+.pytest_cache/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Environment variables
+.env*
+!.env.example
+
+# Local data
+data/
+
+# Tests
+tests/
+
+# SQL files
+*.sql
+
+# Markdown files
+*.md

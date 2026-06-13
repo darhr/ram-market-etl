@@ -5,14 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=timezone.utc)
 
-import pytest
-from sqlalchemy import text
 
-from etl import (
+from etl import (  # noqa: E402
     _insert_invalid_records,
     _upsert_price_snapshots,
     _upsert_products,
