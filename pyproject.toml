@@ -39,3 +39,4 @@ select = ["E", "F", "I"]
 dev = { cmd = "uv run etl.py", envfile = ".env.development" }
 prod = { cmd = "uv run etl.py", envfile = ".env.production" }
 test = { cmd = "uv run pytest" }
+prefect-server = { cmd = "uv run prefect server start" }
