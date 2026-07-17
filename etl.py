@@ -11,9 +11,12 @@ import os
 import re
 import time
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+from prefect import flow, task
+from prefect.cache_policies import NO_CACHE
 from rapidfuzz import fuzz, process
 from sqlalchemy import text
 
@@ -32,49 +35,53 @@ logger = logging.getLogger("__name__")
 # Price quantizer - round half up to 2 decimal places
 _PRICE_Q = Decimal("0.01")
 
-# Create the data folder if it doesn't exist
-os.makedirs("data", exist_ok=True)
 
-# Load brand and series mappings from environment variables
-BRAND_SERIES_MAP_URL = os.getenv("BRAND_SERIES_MAP_URL")
-SERIES_ALIASES_MAP_URL = os.getenv("SERIES_ALIASES_MAP_URL")
+@lru_cache(maxsize=1)
+def _load_brand_series_maps() -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, str]]:
+    """Load brand and series mappings from CSV files referenced by env vars.
 
-if not BRAND_SERIES_MAP_URL or not SERIES_ALIASES_MAP_URL:
-    raise ValueError(
-        "BRAND_SERIES_MAP_URL and SERIES_ALIASES_MAP_URL must be set in the environment"
-    )
+    Cached so the CSVs are read only once per process lifetime.
 
-brand_series_df = pd.read_csv(BRAND_SERIES_MAP_URL)
-series_aliases_df = pd.read_csv(SERIES_ALIASES_MAP_URL)
+    Returns:
+        A tuple of (brand_series_map, series_aliases_map, series_to_brand).
+    """
+    brand_series_url = os.getenv("BRAND_SERIES_MAP_URL")
+    series_aliases_url = os.getenv("SERIES_ALIASES_MAP_URL")
 
-brand_series_dict = brand_series_df.to_dict("list")
-raw_series_aliases_dict = series_aliases_df.to_dict("list")
+    if not brand_series_url or not series_aliases_url:
+        raise ValueError(
+            "BRAND_SERIES_MAP_URL and SERIES_ALIASES_MAP_URL must be set in the environment"
+        )
 
-BRAND_SERIES_MAP = {
-    brand: [
-        str(series).upper().strip()
-        for series in series_list
-        if pd.notna(series) and str(series).strip() != ""
-    ]
-    for brand, series_list in brand_series_dict.items()
-}
-SERIES_ALIASES_MAP = {
-    series: [
-        str(alias).upper().strip()
-        for alias in alias_list
-        if pd.notna(alias) and str(alias).strip() != ""
-    ]
-    for series, alias_list in raw_series_aliases_dict.items()
-}
+    brand_series_df = pd.read_csv(brand_series_url)
+    series_aliases_df = pd.read_csv(series_aliases_url)
 
-# Create a reverse mapping from series to brand
-series_to_brand = {
-    series: brand for brand, series_list in BRAND_SERIES_MAP.items() for series in series_list
-}
+    brand_series_dict = brand_series_df.to_dict("list")
+    raw_series_aliases_dict = series_aliases_df.to_dict("list")
 
-# Get all brands and series as lists
-all_brands = list(BRAND_SERIES_MAP.keys())
-all_series = list(series_to_brand.keys())
+    brand_series_map = {
+        brand: [
+            str(series).upper().strip()
+            for series in series_list
+            if pd.notna(series) and str(series).strip() != ""
+        ]
+        for brand, series_list in brand_series_dict.items()
+    }
+    series_aliases_map = {
+        series: [
+            str(alias).upper().strip()
+            for alias in alias_list
+            if pd.notna(alias) and str(alias).strip() != ""
+        ]
+        for series, alias_list in raw_series_aliases_dict.items()
+    }
+
+    series_to_brand = {
+        series: brand for brand, series_list in brand_series_map.items() for series in series_list
+    }
+
+    return brand_series_map, series_aliases_map, series_to_brand
+
 
 # Part number extraction patterns, applied in order (most specific first).
 # - sercoplus embeds the PN inside an HTML <h4> tag.
@@ -143,6 +150,8 @@ def extract_series(name: str) -> Optional[str]:
     Returns:
         Optional[str]: The extracted series if found, else None.
     """
+    _, series_aliases_map, series_to_brand = _load_brand_series_maps()
+    all_series = list(series_to_brand.keys())
 
     # partial_ratio covers substrings; token_set_ratio covers typos and extra noise.
     # We take the best of both for each candidate.
@@ -154,7 +163,7 @@ def extract_series(name: str) -> Optional[str]:
     if match:
         return match[0]
 
-    for series, aliases in SERIES_ALIASES_MAP.items():
+    for series, aliases in series_aliases_map.items():
         for alias in aliases:
             if alias in name.split():
                 return series
@@ -172,6 +181,8 @@ def extract_brand(name: str) -> Optional[str]:
     Returns:
         Optional[str]: The extracted brand if found, else None.
     """
+    brand_series_map, _, _ = _load_brand_series_maps()
+    all_brands = list(brand_series_map.keys())
 
     # Same dual approach for consistency.
     def scorer(a: str, b: str, **kw: Any) -> int:
@@ -192,6 +203,7 @@ def extract_ram_series_and_brand(name: str) -> Tuple[Optional[str], Optional[str
     Returns:
         Tuple[Optional[str], Optional[str]]: A tuple containing the brand and series.
     """
+    _, _, series_to_brand = _load_brand_series_maps()
     series = extract_series(name)
     if series:
         return series_to_brand[series], series
@@ -199,34 +211,80 @@ def extract_ram_series_and_brand(name: str) -> Tuple[Optional[str], Optional[str
     return extract_brand(name), None
 
 
+@task
+def validate_data(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+    """
+    Wraps the split_valid_invalid function to validate the transformed DataFrame within
+    the Prefect task context.
+    """
+    return split_valid_invalid(df.to_dict("records"))
+
+
+@task(retries=2, retry_delay_seconds=30)
+def download_bronze(key: str) -> pd.DataFrame:
+    """
+    Wraps download_dataframe to read the bronze Parquet from R2 within
+    the Prefect task context.
+    """
+    return download_dataframe(key)
+
+
+@task(retries=2, retry_delay_seconds=30)
+def upload_to_bronze(raw_data: list[dict]) -> str:
+    """
+    Convert raw records to DataFrame and upload to R2 bronze layer.
+
+    Args:
+        raw_data: List of raw product dictionaries.
+
+    Returns:
+        The R2 object key where the bronze Parquet was uploaded.
+    """
+    raw_data_df = pd.DataFrame(raw_data)
+
+    # Local fallback (dev/debug only; canonical raw lives in R2)
+    if os.getenv("ENVIRONMENT") == "development":
+        raw_data_df.to_csv("data/raw_data.csv", index=False)
+        logger.info("Local fallback saved in data/raw_data.csv")
+
+    return upload_dataframe(raw_data_df)
+
+
+@task(retries=3, retry_delay_seconds=45)
+def scrape_store(scraper: Any) -> tuple[str, list[dict]]:
+    """
+    Scrape a single store and return its name and records.
+
+    Args:
+        scraper: A BaseScraper instance.
+
+    Returns:
+        A tuple of (store_name, records).
+    """
+    return scraper.store_name, scraper.scrape_all()
+
+
+@flow(log_prints=True, name="extract")
 def extract_data() -> tuple[str, list[str], list[str]]:
     """
     Extracts data from all scrapers, persists the raw snapshot to the R2 bronze
     layer, and returns the object key for the transform stage.
 
-    The local CSV (``data/raw_data.csv``) is kept as a development fallback
-    only; the canonical raw record set lives in R2.
-
     Returns:
-        A tuple of (bronze_key, stores_success, stores_failed) where:
-        - bronze_key: The R2 object key where the bronze Parquet was uploaded.
-        - stores_success: Store names that were scraped successfully.
-        - stores_failed: Store names that failed during scraping.
-
-    Raises:
-        botocore.exceptions.BotoCoreError: If the upload to R2 fails.
-        botocore.exceptions.ClientError: If the upload to R2 fails.
+        A tuple of (bronze_key, stores_success, stores_failed).
     """
     scrapers = get_all_scrapers()
-    raw_data: List[Dict[str, Any]] = []
+    futures = [scrape_store.submit(scraper) for scraper in scrapers]
+
+    raw_data: list[dict] = []
     stores_success: list[str] = []
     stores_failed: list[str] = []
 
-    for scraper in scrapers:
-        logger.info("Running scraper: %s", scraper.store_name)
+    for future, scraper in zip(futures, scrapers):
         try:
-            raw_data.extend(scraper.scrape_all())
-            stores_success.append(scraper.store_name)
+            store_name, records = future.result()
+            raw_data.extend(records)
+            stores_success.append(store_name)
         except Exception:
             stores_failed.append(scraper.store_name)
             logger.exception("Scraper %s failed", scraper.store_name)
@@ -237,18 +295,12 @@ def extract_data() -> tuple[str, list[str], list[str]]:
         stores_success,
         stores_failed,
     )
-    raw_data_df = pd.DataFrame(raw_data)
 
-    # Local fallback (dev/debug only; canonical raw lives in R2)
-    if os.getenv("ENVIRONMENT") == "development":
-        raw_data_df.to_csv("data/raw_data.csv", index=False)
-        logger.info("Local fallback saved in data/raw_data.csv")
-
-    # Bronze layer: critical step. Re-raises on failure.
-    bronze_key = upload_dataframe(raw_data_df)
+    bronze_key = upload_to_bronze(raw_data)
     return bronze_key, stores_success, stores_failed
 
 
+@task
 def transform_data(raw_data_df: pd.DataFrame) -> pd.DataFrame:
     """
     Transforms raw data into a structured format.
@@ -306,6 +358,7 @@ def transform_data(raw_data_df: pd.DataFrame) -> pd.DataFrame:
     return transformed_ram_kit_df
 
 
+@task(retries=2, retry_delay_seconds=30, cache_policy=NO_CACHE)
 def load_data(
     valid_records: list[Dict[str, Any]],
     invalid_records: list[Dict[str, Any]],
@@ -604,6 +657,7 @@ def _insert_invalid_records(
         logger.info("Invalid records: %d upserted.", len(inserts))
 
 
+@task(retries=2, retry_delay_seconds=30, cache_policy=NO_CACHE)
 def register_etl_run_start(engine: Any) -> int:
     """Insert a new row in silver.etl_runs with status 'running'.
 
@@ -626,6 +680,7 @@ def register_etl_run_start(engine: Any) -> int:
     return run_id
 
 
+@task(retries=2, retry_delay_seconds=30, cache_policy=NO_CACHE)
 def register_etl_run_end(
     engine: Any,
     run_id: int,
@@ -679,32 +734,21 @@ def register_etl_run_end(
     )
 
 
-if __name__ == "__main__":
+@flow(log_prints=True, name="ram-market-etl")
+def etl_pipeline() -> None:
+    """Orchestrate the full ETL: extract, transform, validate, load."""
     from db.connection import get_db_engine
 
-    logger.info("Starting ETL process...")
     engine = get_db_engine()
-
-    # Register the run before any work; marked as 'failed' on exception.
     run_id = register_etl_run_start(engine)
     try:
         bronze_key, stores_success, stores_failed = extract_data()
 
         # Re-read the bronze Parquet as the single source of truth.
-        raw_data_df = download_dataframe(bronze_key)
+        raw_data_df = download_bronze(bronze_key)
         transformed_df = transform_data(raw_data_df)
-        valid, invalid = split_valid_invalid(transformed_df.to_dict("records"))
+        valid, invalid = validate_data(transformed_df)
         load_data(valid, invalid, run_id, engine, stores_success)
-        register_etl_run_end(
-            engine,
-            run_id,
-            valid_count=len(valid),
-            invalid_count=len(invalid),
-            raw_count=len(transformed_df),
-            stores_success=stores_success,
-            stores_failed=stores_failed,
-        )
-        logger.info("ETL process completed")
     except Exception:
         # Mark the run as failed so it's visible in etl_runs history.
         with engine.begin() as conn:
@@ -715,3 +759,22 @@ if __name__ == "__main__":
             )
         logger.exception("ETL process failed")
         raise
+
+    # Audit step: failure here does NOT mean the pipeline failed.
+    # Data was already loaded successfully.
+    try:
+        register_etl_run_end(
+            engine,
+            run_id,
+            valid_count=len(valid),
+            invalid_count=len(invalid),
+            raw_count=len(transformed_df),
+            stores_success=stores_success,
+            stores_failed=stores_failed,
+        )
+    except Exception:
+        logger.exception("Could not finalize ETL metadata")
+
+
+if __name__ == "__main__":
+    etl_pipeline()
