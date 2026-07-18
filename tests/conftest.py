@@ -1,7 +1,7 @@
 """Shared fixtures for ETL tests.
 
-Sets up temporary brand/series CSV data and reloads the etl module so that
-module-level globals (all_brands, all_series, etc.) use test data instead
+Sets up temporary brand/series CSV data and reloads the utils.extractors
+module so that the cached _load_brand_series_maps uses test data instead
 of the production Google Sheets.
 """
 
@@ -19,18 +19,18 @@ import pytest
 
 # Environment setup - runs at conftest import time, which pytest handles
 # before collecting any test modules.  This ensures the env vars are
-# present when etl.py reads them at import time.
+# present when utils.extractors reads them at import time.
 #
-# Module-level code is necessary because test files import from etl at
-# module level (e.g. from etl import transform_data), which triggers
-# etl.py's CSV reads before any fixture can run.
+# Module-level code is necessary because test files import from
+# utils.extractors at module level, which triggers the module's CSV
+# reads before any fixture can run.
 #
 # Pytest's pythonpath = ["."] (pyproject.toml) already adds the project
 # root to sys.path, so no manual manipulation is needed.
 
 # CSV column layout: first row = brand names, subsequent rows = series
-# per brand (aligned by column).  This matches what etl.py expects from
-# the production Google Sheet.
+# per brand (aligned by column).  This matches what utils.extractors
+# expects from the production Google Sheet.
 _BRAND_SERIES_CSV = """\
 KINGSTON,G.SKILL,CORSAIR
 FURY,Trident Z5,VENGEANCE
@@ -56,11 +56,12 @@ with open(_sa_path, "w", encoding="utf-8") as f:
 os.environ["BRAND_SERIES_MAP_URL"] = _bs_path
 os.environ["SERIES_ALIASES_MAP_URL"] = _sa_path
 
-# Reload etl so it re-reads the CSVs from the temp files.
-if "etl" in sys.modules:
-    importlib.reload(sys.modules["etl"])
+# Reload utils.extractors so it re-reads the CSVs from the temp files.
+_extractors_mod = "utils.extractors"
+if _extractors_mod in sys.modules:
+    importlib.reload(sys.modules[_extractors_mod])
 else:
-    import etl  # noqa: F401 - triggers module-level CSV reads
+    import utils.extractors  # noqa: F401 - triggers module-level CSV reads
 
 
 @atexit.register

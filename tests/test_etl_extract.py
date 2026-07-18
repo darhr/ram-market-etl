@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from etl import (
+from utils.extractors import (
     extract_brand,
     extract_part_number,
     extract_ram_series_and_brand,
@@ -99,6 +99,14 @@ class TestExtractSeries:
     def test_partial_match_with_noise(self) -> None:
         assert extract_series("TRIDENT Z5 RGB 32GB DDR5") == "TRIDENT Z5"
 
+    def test_candidates_limits_search(self) -> None:
+        """When candidates are provided, only those are considered."""
+        assert extract_series("KINGSTON FURY 16GB DDR5", candidates=["FURY"]) == "FURY"
+
+    def test_candidates_no_match(self) -> None:
+        """Returns None when series is not in the candidates list."""
+        assert extract_series("KINGSTON FURY 16GB DDR5", candidates=["VENGEANCE"]) is None
+
 
 class TestExtractBrand:
     """Tests for extract_brand - fuzzy matching against known brands."""
@@ -130,3 +138,23 @@ class TestExtractRamSeriesAndBrand:
         brand, series = extract_ram_series_and_brand("RANDOM TEXT 8GB")
         assert brand is None
         assert series is None
+
+    def test_brand_first_series_from_different_brand(self) -> None:
+        """Brand found but series belongs to another brand, fallback to series-first."""
+        # "TRIDENT Z5" is from G.SKILL, not KINGSTON.
+        # Fallback finds the series and derives the correct brand.
+        brand, series = extract_ram_series_and_brand("KINGSTON TRIDENT Z5 16GB DDR5")
+        assert brand == "G.SKILL"
+        assert series == "TRIDENT Z5"
+
+    def test_fallback_brand_not_in_name(self) -> None:
+        """Brand not in name, fallback finds series and derives brand."""
+        brand, series = extract_ram_series_and_brand("TRIDENT Z5 RGB 32GB DDR5")
+        assert brand == "G.SKILL"
+        assert series == "TRIDENT Z5"
+
+    def test_alias_within_brand_first(self) -> None:
+        """Alias works within the brand-first path."""
+        brand, series = extract_ram_series_and_brand("KINGSTON FURIA 16GB DDR5")
+        assert brand == "KINGSTON"
+        assert series == "FURY"
