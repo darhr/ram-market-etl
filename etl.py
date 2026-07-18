@@ -6,10 +6,8 @@ re-reads it from there as the single source of truth, transforms it, and
 loads it into the database.
 """
 
-import logging
 import os
 import re
-import time
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,20 +15,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from prefect import flow, task
 from prefect.cache_policies import NO_CACHE
+from prefect.logging import get_run_logger
 from rapidfuzz import fuzz, process
 from sqlalchemy import text
 
 from scrapers.factory import get_all_scrapers
 from utils.storage import download_dataframe, upload_dataframe
 from utils.validators import split_valid_invalid
-
-# UTC timestamps for logs
-logging.Formatter.converter = time.gmtime
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
-)
-logger = logging.getLogger("__name__")
 
 # Price quantizer - round half up to 2 decimal places
 _PRICE_Q = Decimal("0.01")
@@ -240,6 +231,7 @@ def upload_to_bronze(raw_data: list[dict]) -> str:
     Returns:
         The R2 object key where the bronze Parquet was uploaded.
     """
+    logger = get_run_logger()
     raw_data_df = pd.DataFrame(raw_data)
 
     # Local fallback (dev/debug only; canonical raw lives in R2)
@@ -273,6 +265,7 @@ def extract_data() -> tuple[str, list[str], list[str]]:
     Returns:
         A tuple of (bronze_key, stores_success, stores_failed).
     """
+    logger = get_run_logger()
     scrapers = get_all_scrapers()
     futures = [scrape_store.submit(scraper) for scraper in scrapers]
 
@@ -311,6 +304,7 @@ def transform_data(raw_data_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: The transformed DataFrame with all records.
     """
+    logger = get_run_logger()
     if raw_data_df.empty:
         logger.warning("No data extracted to transform. Returning empty DataFrame.")
         return pd.DataFrame()
@@ -376,6 +370,7 @@ def load_data(
         engine: SQLAlchemy engine to use for the connection.
         stores_success: Store names that were scraped successfully.
     """
+    logger = get_run_logger()
     if not valid_records and not invalid_records:
         logger.info("No data to load into the database.")
         return
@@ -385,14 +380,16 @@ def load_data(
     with engine.begin() as conn:
         conn.execute(text("SET search_path TO silver"))
 
-        store_to_id = _upsert_stores(conn, set(stores_success))
+        store_to_id = _upsert_stores(conn, set(stores_success), logger)
 
         if valid_records:
-            product_id_map = _upsert_products(conn, valid_records)
-            _upsert_price_snapshots(conn, valid_records, product_id_map, store_to_id, etl_run_id)
+            product_id_map = _upsert_products(conn, valid_records, logger)
+            _upsert_price_snapshots(
+                conn, valid_records, product_id_map, store_to_id, etl_run_id, logger
+            )
 
         if invalid_records:
-            _insert_invalid_records(conn, invalid_records, store_to_id, etl_run_id)
+            _insert_invalid_records(conn, invalid_records, store_to_id, etl_run_id, logger)
 
     logger.info("Load process completed successfully.")
 
@@ -400,6 +397,7 @@ def load_data(
 def _upsert_stores(
     conn: Any,
     stores: set[str],
+    logger: Any,
 ) -> Dict[str, int]:
     """Insert new stores and return a name→id mapping.
 
@@ -433,6 +431,7 @@ def _upsert_stores(
 def _upsert_products(
     conn: Any,
     valid_records: list[Dict[str, Any]],
+    logger: Any,
 ) -> Dict[Tuple[str, int, int], int]:
     """
     Upsert products and return (part_number, capacity_gb, kit_modules) -> id
@@ -534,6 +533,7 @@ def _upsert_price_snapshots(
     product_key_to_id: Dict[Tuple[str, int, int], int],
     store_to_id: Dict[str, int],
     etl_run_id: int,
+    logger: Any,
 ) -> None:
     """Implement SCD-2: close old snapshot if price changed, insert new.
 
@@ -622,6 +622,7 @@ def _insert_invalid_records(
     invalid_records: list[Dict[str, Any]],
     store_to_id: Dict[str, int],
     etl_run_id: int,
+    logger: Any,
 ) -> None:
     """Insert invalid records into the quarantine table.
 
@@ -667,6 +668,7 @@ def register_etl_run_start(engine: Any) -> int:
     Returns:
         The id of the newly created ETL run.
     """
+    logger = get_run_logger()
     with engine.begin() as conn:
         conn.execute(text("SET search_path TO silver"))
         result = conn.execute(
@@ -701,6 +703,7 @@ def register_etl_run_end(
         stores_success: Store names that were scraped successfully.
         stores_failed: Store names that failed during scraping.
     """
+    logger = get_run_logger()
     with engine.begin() as conn:
         conn.execute(text("SET search_path TO silver"))
         conn.execute(
@@ -739,6 +742,7 @@ def etl_pipeline() -> None:
     """Orchestrate the full ETL: extract, transform, validate, load."""
     from db.connection import get_db_engine
 
+    logger = get_run_logger()
     engine = get_db_engine()
     run_id = register_etl_run_start(engine)
     try:
