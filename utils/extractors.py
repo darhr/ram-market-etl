@@ -5,13 +5,14 @@ Pure functions for extracting brand, series, and part numbers from raw
 product names. No pipeline or Prefect dependencies.
 """
 
-import os
 import re
 from functools import lru_cache
 from typing import Any, List, Optional, Tuple
 
 import pandas as pd
 from rapidfuzz import fuzz, process
+
+from utils.config import get_brand_series_map_url, get_series_aliases_map_url
 
 
 @lru_cache(maxsize=1)
@@ -23,12 +24,14 @@ def _load_brand_series_maps() -> tuple[dict[str, list[str]], dict[str, list[str]
     Returns:
         A tuple of (brand_series_map, series_aliases_map, series_to_brand).
     """
-    brand_series_url = os.getenv("BRAND_SERIES_MAP_URL")
-    series_aliases_url = os.getenv("SERIES_ALIASES_MAP_URL")
+    brand_series_url = get_brand_series_map_url()
+    series_aliases_url = get_series_aliases_map_url()
 
     if not brand_series_url or not series_aliases_url:
         raise ValueError(
-            "BRAND_SERIES_MAP_URL and SERIES_ALIASES_MAP_URL must be set in the environment"
+            "brand-series-map-url and series-aliases-map-url Secret Blocks "
+            "or their env var equivalents (BRAND_SERIES_MAP_URL, "
+            "SERIES_ALIASES_MAP_URL) must be configured"
         )
 
     brand_series_df = pd.read_csv(brand_series_url)
@@ -142,7 +145,7 @@ def extract_series(name: str, candidates: Optional[List[str]] = None) -> Optiona
     matches = process.extract(name, candidates, scorer=_series_scorer, score_cutoff=80)
 
     if matches:
-        if len(matches)==1:
+        if len(matches) == 1:
             return matches[0][0]
 
         # if more than one match, return the one with the highest score

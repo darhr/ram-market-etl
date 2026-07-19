@@ -8,7 +8,6 @@ Parquet snapshot from R2 rather than operating on an in-memory DataFrame.
 
 import io
 import logging
-import os
 from datetime import datetime, timezone
 
 import boto3
@@ -16,12 +15,9 @@ import pandas as pd
 from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-logger = logging.getLogger(__name__)
+from utils.config import get_r2_config
 
-_BUCKET_ENV = "R2_BUCKET_NAME"
-_ENDPOINT_ENV = "R2_ENDPOINT_URL"
-_KEY_ENV = "R2_ACCESS_KEY_ID"
-_SECRET_ENV = "R2_SECRET_ACCESS_KEY"
+logger = logging.getLogger(__name__)
 
 
 def _get_client():
@@ -31,19 +27,18 @@ def _get_client():
     for parallel / orchestrated execution (e.g. Prefect flows).
 
     Raises:
-        RuntimeError: If any required R2 environment variable is missing.
+        RuntimeError: If any required R2 credential is missing.
     """
-    missing = [
-        name for name in (_BUCKET_ENV, _ENDPOINT_ENV, _KEY_ENV, _SECRET_ENV) if not os.getenv(name)
-    ]
+    r2 = get_r2_config()
+    missing = [key for key, value in r2.items() if not value]
     if missing:
-        raise RuntimeError(f"Missing R2 environment variables: {', '.join(missing)}")
+        raise RuntimeError(f"Missing R2 credentials: {', '.join(missing)}")
 
     return boto3.client(
         "s3",
-        endpoint_url=os.environ[_ENDPOINT_ENV],
-        aws_access_key_id=os.environ[_KEY_ENV],
-        aws_secret_access_key=os.environ[_SECRET_ENV],
+        endpoint_url=r2["endpoint_url"],
+        aws_access_key_id=r2["access_key"],
+        aws_secret_access_key=r2["secret_key"],
         config=Config(signature_version="s3v4"),
         region_name="auto",
     )
@@ -92,7 +87,7 @@ def upload_dataframe(df: pd.DataFrame, run_at: datetime | None = None) -> str:
     """
     client = _get_client()
     key = build_bronze_key(run_at)
-    bucket = os.environ[_BUCKET_ENV]
+    bucket = get_r2_config()["bucket"]
 
     buffer = io.BytesIO()
     df.to_parquet(buffer, engine="pyarrow", index=False)
@@ -137,7 +132,7 @@ def download_dataframe(key: str) -> pd.DataFrame:
             or the request fails.
     """
     client = _get_client()
-    bucket = os.environ[_BUCKET_ENV]
+    bucket = get_r2_config()["bucket"]
 
     try:
         response = client.get_object(Bucket=bucket, Key=key)

@@ -123,7 +123,7 @@ class TestUploadDataframe:
     def test_upload_raises_when_env_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("R2_BUCKET_NAME", raising=False)
         with patch("utils.storage.boto3.client") as mock_boto:
-            with pytest.raises(RuntimeError, match="R2_BUCKET_NAME"):
+            with pytest.raises(RuntimeError, match="bucket"):
                 upload_dataframe(_sample_df())
         mock_boto.assert_not_called()
 
@@ -170,7 +170,7 @@ class TestDownloadDataframe:
     def test_download_raises_when_env_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("R2_ENDPOINT_URL", raising=False)
         with patch("utils.storage.boto3.client") as mock_boto:
-            with pytest.raises(RuntimeError, match="R2_ENDPOINT_URL"):
+            with pytest.raises(RuntimeError, match="endpoint_url"):
                 download_dataframe(
                     "bronze/raw_data/2026-06-06/2026-06-06T14-30-00Z/raw_ram_data.parquet"
                 )
