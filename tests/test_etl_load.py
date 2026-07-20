@@ -7,6 +7,8 @@ from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
+from prefect.logging import disable_run_logger
+
 NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=timezone.utc)
 
 
@@ -40,7 +42,7 @@ class TestUpsertStores:
 
     def test_empty_set_returns_empty_dict(self) -> None:
         conn = MagicMock()
-        assert _upsert_stores(conn, set()) == {}
+        assert _upsert_stores(conn, set(), MagicMock()) == {}
         conn.execute.assert_not_called()
 
     def test_all_new_stores(self) -> None:
@@ -51,7 +53,7 @@ class TestUpsertStores:
             _mock_execute_result(fetchone_val=[3]),  # COUNT after
             _mock_execute_result(fetchall_val=[("cyc", 1), ("compuvision", 2), ("sercoplus", 3)]),
         ]
-        result = _upsert_stores(conn, {"cyc", "compuvision", "sercoplus"})
+        result = _upsert_stores(conn, {"cyc", "compuvision", "sercoplus"}, MagicMock())
         assert result == {"cyc": 1, "compuvision": 2, "sercoplus": 3}
         assert conn.execute.call_count == 4
 
@@ -63,7 +65,7 @@ class TestUpsertStores:
             _mock_execute_result(fetchone_val=[3]),  # COUNT after - same
             _mock_execute_result(fetchall_val=[("cyc", 1), ("compuvision", 2), ("sercoplus", 3)]),
         ]
-        result = _upsert_stores(conn, {"cyc", "compuvision"})
+        result = _upsert_stores(conn, {"cyc", "compuvision"}, MagicMock())
         assert result == {"cyc": 1, "compuvision": 2, "sercoplus": 3}
         assert conn.execute.call_count == 4
 
@@ -94,7 +96,7 @@ class TestUpsertProducts:
                 "has_rgb": True,
             }
         ]
-        result = _upsert_products(conn, records)
+        result = _upsert_products(conn, records, MagicMock())
         assert result == {("KF560C36BBE16", 16, 1): 100}
         assert conn.execute.call_count == 4
 
@@ -120,7 +122,7 @@ class TestUpsertProducts:
                 "has_rgb": True,
             }
         ]
-        result = _upsert_products(conn, records)
+        result = _upsert_products(conn, records, MagicMock())
         assert result == {("KF560C36BBE16", 16, 1): 200}
         assert conn.execute.call_count == 5
 
@@ -147,7 +149,7 @@ class TestUpsertProducts:
                 "has_rgb": True,
             }
         ]
-        result = _upsert_products(conn, records)
+        result = _upsert_products(conn, records, MagicMock())
         assert result == {("KF560C36BBE16", 16, 1): 100}
         assert conn.execute.call_count == 4
 
@@ -190,7 +192,7 @@ class TestUpsertProducts:
                 "has_rgb": True,
             },
         ]
-        result = _upsert_products(conn, records)
+        result = _upsert_products(conn, records, MagicMock())
         assert result == {
             ("KF560C36BBE16", 16, 1): 100,
             ("CMH32GX5M2B6000Z30", 32, 2): 200,
@@ -219,7 +221,7 @@ class TestUpsertPriceSnapshots:
                 "price": Decimal("89.99"),
             }
         ]
-        _upsert_price_snapshots(conn, records, product_map, store_map, 1)
+        _upsert_price_snapshots(conn, records, product_map, store_map, 1, MagicMock())
         # Only the SELECT was called
         assert conn.execute.call_count == 1
 
@@ -239,7 +241,7 @@ class TestUpsertPriceSnapshots:
                 "price": Decimal("89.99"),
             }
         ]
-        _upsert_price_snapshots(conn, records, product_map, store_map, 1)
+        _upsert_price_snapshots(conn, records, product_map, store_map, 1, MagicMock())
         assert conn.execute.call_count == 2  # SELECT + INSERT
 
     def test_price_changed_closes_and_inserts(self) -> None:
@@ -263,7 +265,7 @@ class TestUpsertPriceSnapshots:
                 "price": Decimal("89.99"),
             }
         ]
-        _upsert_price_snapshots(conn, records, product_map, store_map, 1)
+        _upsert_price_snapshots(conn, records, product_map, store_map, 1, MagicMock())
         assert conn.execute.call_count == 3  # SELECT + UPDATE + INSERT
 
     def test_dedup_same_product_store_keeps_first(self) -> None:
@@ -289,7 +291,7 @@ class TestUpsertPriceSnapshots:
                 "price": Decimal("95.00"),
             },
         ]
-        _upsert_price_snapshots(conn, records, product_map, store_map, 1)
+        _upsert_price_snapshots(conn, records, product_map, store_map, 1, MagicMock())
         # SELECT + 1 INSERT (second record deduped)
         assert conn.execute.call_count == 2
 
@@ -307,7 +309,7 @@ class TestInsertInvalidRecords:
                 "error_reason": "brand: required",
             },
         ]
-        _insert_invalid_records(conn, records, {"cyc": 1}, 1)
+        _insert_invalid_records(conn, records, {"cyc": 1}, 1, MagicMock())
         conn.execute.assert_called_once()
         # Verify the SQL contains ON CONFLICT
         sql_call = conn.execute.call_args
@@ -315,7 +317,7 @@ class TestInsertInvalidRecords:
 
     def test_empty_records_no_execution(self) -> None:
         conn = MagicMock()
-        _insert_invalid_records(conn, [], {"cyc": 1}, 1)
+        _insert_invalid_records(conn, [], {"cyc": 1}, 1, MagicMock())
         conn.execute.assert_not_called()
 
 
@@ -333,7 +335,8 @@ class TestRegisterEtlRunStart:
             MagicMock(),  # SET search_path
             _mock_execute_result(fetchone_val=[42]),  # INSERT RETURNING id
         ]
-        result = register_etl_run_start(engine)
+        with disable_run_logger():
+            result = register_etl_run_start.fn(engine)
         assert result == 42
 
 
@@ -350,15 +353,16 @@ class TestRegisterEtlRunEnd:
             MagicMock(),  # SET search_path
             MagicMock(),  # UPDATE etl_runs
         ]
-        register_etl_run_end(
-            engine,
-            1,
-            valid_count=98,
-            invalid_count=4,
-            raw_count=102,
-            stores_success=["cyc"],
-            stores_failed=["sercoplus"],
-        )
+        with disable_run_logger():
+            register_etl_run_end.fn(
+                engine,
+                1,
+                valid_count=98,
+                invalid_count=4,
+                raw_count=102,
+                stores_success=["cyc"],
+                stores_failed=["sercoplus"],
+            )
         assert conn.execute.call_count == 2
 
 
@@ -367,7 +371,8 @@ class TestLoadData:
 
     def test_empty_records_returns_early(self) -> None:
         engine = MagicMock()
-        load_data([], [], 1, engine, ["cyc"])
+        with disable_run_logger():
+            load_data.fn([], [], 1, engine, ["cyc"])
         engine.begin.assert_not_called()
 
     def test_valid_records_calls_upsert_stores_and_products(self) -> None:
@@ -412,7 +417,8 @@ class TestLoadData:
         ]
         conn.execute.side_effect = results
 
-        load_data(valid, [], 1, engine, ["cyc"])
+        with disable_run_logger():
+            load_data.fn(valid, [], 1, engine, ["cyc"])
         # Verify SET search_path was called
         first_call = conn.execute.call_args_list[0]
         assert "search_path" in str(first_call[0][0])

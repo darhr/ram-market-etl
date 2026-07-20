@@ -14,6 +14,7 @@ import sys
 import tempfile
 from decimal import Decimal
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -70,6 +71,16 @@ def _cleanup_etl_env() -> None:
     os.environ.pop("BRAND_SERIES_MAP_URL", None)
     os.environ.pop("SERIES_ALIASES_MAP_URL", None)
     _etl_tmpdir_obj.cleanup()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disable_prefect_secrets() -> None:
+    """Prevent Secret.load() from reaching a Prefect server during tests."""
+    with patch(
+        "prefect.blocks.system.Secret.load",
+        side_effect=RuntimeError("Prefect blocks disabled in tests"),
+    ):
+        yield
 
 
 @pytest.fixture()
