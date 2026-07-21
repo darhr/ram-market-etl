@@ -62,9 +62,9 @@ def upload_to_bronze(raw_data: list[dict]) -> str:
     raw_data_df = pd.DataFrame(raw_data)
 
     # Local fallback (dev/debug only; canonical raw lives in R2)
-    if os.getenv("ENVIRONMENT") == "development":
-        raw_data_df.to_csv("data/raw_data.csv", index=False)
-        logger.info("Local fallback saved in data/raw_data.csv")
+    # if os.getenv("ENVIRONMENT") == "development":
+    #     raw_data_df.to_csv("data/raw_data.csv", index=False)
+    #     logger.info("Local fallback saved in data/raw_data.csv")
 
     return upload_dataframe(raw_data_df)
 
