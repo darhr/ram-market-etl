@@ -1750,7 +1750,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ram-market-scraper"
+name = "ram-market-etl"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

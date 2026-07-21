@@ -1,5 +1,5 @@
 [project]
-name = "ram-market-scraper"
+name = "ram-market-etl"
 version = "0.1.0"
 description = ""
 readme = "README.md"

@@ -1,5 +1,5 @@
 # Generic metadata about this project
-name: ram-market-scraper
+name: ram-market-etl
 prefect-version: 3.0
 
 # Build and push are handled by GitHub Actions (deploy.yml)
@@ -10,7 +10,7 @@ push: null
 pull:
   - prefect.deployments.steps.git_clone:
       id: clone-step
-      repository: https://github.com/darhr/ram-market-scraper.git
+      repository: https://github.com/darhr/ram-market-etl.git
       branch: main
 
 # Deployment configurations
