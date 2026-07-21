@@ -1,6 +1,6 @@
 # Generic metadata about this project
 name: ram-market-etl
-prefect-version: 3.0
+prefect-version: "3.0"
 
 # Build and push are handled by GitHub Actions (deploy.yml)
 build: null
