@@ -6,7 +6,6 @@ re-reads it from there as the single source of truth, transforms it, and
 loads it into the database.
 """
 
-import os
 from decimal import Decimal
 from typing import Any, Dict, Tuple
 
@@ -58,14 +57,7 @@ def upload_to_bronze(raw_data: list[dict]) -> str:
     Returns:
         The R2 object key where the bronze Parquet was uploaded.
     """
-    logger = get_run_logger()
     raw_data_df = pd.DataFrame(raw_data)
-
-    # Local fallback (dev/debug only; canonical raw lives in R2)
-    # if os.getenv("ENVIRONMENT") == "development":
-    #     raw_data_df.to_csv("data/raw_data.csv", index=False)
-    #     logger.info("Local fallback saved in data/raw_data.csv")
-
     return upload_dataframe(raw_data_df)
 
 
@@ -226,22 +218,28 @@ def load_data(
                 with conn.begin_nested() as sp:
                     try:
                         _upsert_price_snapshots(
-                            conn, valid_records, product_id_map,
-                            store_to_id, etl_run_id, logger,
+                            conn,
+                            valid_records,
+                            product_id_map,
+                            store_to_id,
+                            etl_run_id,
+                            logger,
                         )
                     except Exception:
                         sp.rollback()
                         logger.warning(
-                            "Price snapshots failed and were rolled back. "
-                            "Products were preserved."
+                            "Price snapshots failed and were rolled back. Products were preserved."
                         )
 
         if invalid_records:
             with conn.begin_nested() as sp:
                 try:
                     _insert_invalid_records(
-                        conn, invalid_records, store_to_id,
-                        etl_run_id, logger,
+                        conn,
+                        invalid_records,
+                        store_to_id,
+                        etl_run_id,
+                        logger,
                     )
                 except Exception:
                     sp.rollback()
