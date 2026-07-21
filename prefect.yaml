@@ -1,0 +1,41 @@
+# Generic metadata about this project
+name: ram-market-etl
+prefect-version: 3.0
+
+# Build and push are handled by GitHub Actions (deploy.yml)
+build: null
+push: null
+
+# Pull: clone repo and install dependencies
+pull:
+  - prefect.deployments.steps.git_clone:
+      id: clone-step
+      repository: https://github.com/darhr/ram-market-etl.git
+      branch: main
+
+# Deployment configurations
+deployments:
+  - name: ram-market-etl
+    version: null
+    tags: [etl, ram-market]
+    description: "RAM Market price scraper pipeline"
+    entrypoint: etl.py:etl_pipeline
+    parameters: {}
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "America/Lima"
+        active: true
+    work_pool:
+      name: prefect-managed
+      job_variables:
+        pip_packages:
+          - boto3
+          - cloudscraper
+          - pandas
+          - prefect
+          - psycopg2-binary
+          - pyarrow
+          - pydantic
+          - rapidfuzz
+          - requests
+          - sqlalchemy

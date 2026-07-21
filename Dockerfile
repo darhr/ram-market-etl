@@ -1,6 +1,6 @@
 FROM python:3.12-slim AS builder
 
-LABEL maintainer="ram-market-scraper"
+LABEL maintainer="ram-market-etl"
 LABEL description="ETL pipeline for RAM price monitoring in peruvian stores"
 
 WORKDIR /app

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
+from prefect.logging import disable_run_logger
 
 from etl import transform_data
 
@@ -17,11 +18,13 @@ class TestTransformDataEmpty:
     """Tests for transform_data with empty input."""
 
     def test_empty_df_returns_empty(self) -> None:
-        result = transform_data(pd.DataFrame())
+        with disable_run_logger():
+            result = transform_data.fn(pd.DataFrame())
         assert result.empty
 
     def test_empty_df_returns_same_columns(self) -> None:
-        result = transform_data(pd.DataFrame())
+        with disable_run_logger():
+            result = transform_data.fn(pd.DataFrame())
         assert list(result.columns) == []
 
 
@@ -34,7 +37,8 @@ class TestTransformDataOutput:
                 {"name": "KINGSTON FURY 16GB DDR5 6000MHZ RGB", "price": 89.99, "store": "cyc"},
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         expected = {
             "raw_name",
             "total_capacity_gb",
@@ -63,7 +67,8 @@ class TestTransformDataOutput:
                 },
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["kit_modules"] == expected_modules
 
     @pytest.mark.parametrize(
@@ -84,7 +89,8 @@ class TestTransformDataOutput:
                 },
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["ddr_gen"] == expected_ddr_gen
 
     @pytest.mark.parametrize(
@@ -103,7 +109,8 @@ class TestTransformDataOutput:
                 {"name": f"KINGSTON FURY 16GB DDR5 {speed_string}", "price": 89.99, "store": "cyc"},
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["speed_mts"] == expected_speed
 
     def test_rgb_detected(self) -> None:
@@ -112,7 +119,8 @@ class TestTransformDataOutput:
                 {"name": "KINGSTON FURY 16GB DDR5 6000MHZ RGB", "price": 89.99, "store": "cyc"},
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["has_rgb"] == True  # noqa: E712
 
     def test_rgb_not_detected(self) -> None:
@@ -121,7 +129,8 @@ class TestTransformDataOutput:
                 {"name": "KINGSTON FURY 16GB DDR5 6000MHZ", "price": 89.99, "store": "cyc"},
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["has_rgb"] == False  # noqa: E712
 
     @pytest.mark.parametrize(
@@ -138,7 +147,8 @@ class TestTransformDataOutput:
                 },
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["total_capacity_gb"] == expected_capacity
 
     def test_name_is_uppercased(self) -> None:
@@ -147,7 +157,8 @@ class TestTransformDataOutput:
                 {"name": "kingston fury 16gb ddr5 6000mhz", "price": 89.99, "store": "cyc"},
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["raw_name"] == "KINGSTON FURY 16GB DDR5 6000MHZ"
 
     def test_brand_and_series_extracted(self) -> None:
@@ -156,6 +167,7 @@ class TestTransformDataOutput:
                 {"name": "KINGSTON FURY 16GB DDR5 6000MHZ", "price": 89.99, "store": "cyc"},
             ]
         )
-        result = transform_data(df)
+        with disable_run_logger():
+            result = transform_data.fn(df)
         assert result.iloc[0]["brand"] == "KINGSTON"
         assert result.iloc[0]["series"] == "FURY"

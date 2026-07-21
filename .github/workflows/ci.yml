@@ -62,7 +62,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          tags: ram-market-scraper:test
+          tags: ram-market-etl:test
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
