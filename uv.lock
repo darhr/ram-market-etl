@@ -1308,6 +1308,21 @@ wheels = [
 ]
 
 [[package]]
+name = "prefect-docker"
+version = "0.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docker" },
+    { name = "exceptiongroup" },
+    { name = "prefect" },
+    { name = "python-on-whales" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/0d/3cca530e35ecfa604d519e203721ce55ca702b900bbb5532ffea89bf3d2f/prefect_docker-0.7.3.tar.gz", hash = "sha256:be9e826343e0128f8d4a35ec6411e3af7866474bedb0c493ad150c2c503c7e13", size = 48384, upload-time = "2026-07-15T18:15:53.542Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/be/96281100923c9c09927ab1cf5768fd573475b2f4d3f86252faa8f1f21836/prefect_docker-0.7.3-py3-none-any.whl", hash = "sha256:6c0106e0c8284b72ee54ee65ccd4efa3c4ca3205d8b5c65d647d30423aefa968", size = 32263, upload-time = "2026-07-15T18:15:52.424Z" },
+]
+
+[[package]]
 name = "prometheus-client"
 version = "0.25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1636,6 +1651,19 @@ wheels = [
 ]
 
 [[package]]
+name = "python-on-whales"
+version = "0.81.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/81/4b545de811e41ff90762a1c7045fcae215f20f4114eebddedab8eab6f63e/python_on_whales-0.81.0.tar.gz", hash = "sha256:bb6172014e3fe949f908092748bddf34df758cb92c2c3d0536b75bf236abce1b", size = 115066, upload-time = "2026-03-09T14:17:43.534Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/cb/5049e041a1d0e6f6cb6ac8737a8215fb4e67cb147f140ef31e67361dc61a/python_on_whales-0.81.0-py3-none-any.whl", hash = "sha256:6d5f81f56d0f95fd311a7cce29a01a1a60841074e4936000dc5f2dc9a7ffafac", size = 119240, upload-time = "2026-03-09T14:17:42.195Z" },
+]
+
+[[package]]
 name = "python-slugify"
 version = "8.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1741,6 +1769,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "poethepoet" },
+    { name = "prefect-docker" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -1762,6 +1791,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "poethepoet", specifier = ">=0.46.0" },
+    { name = "prefect-docker", specifier = ">=0.6.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.11.0" },
 ]
