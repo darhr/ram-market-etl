@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from prefect.logging import disable_run_logger
 
 NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=timezone.utc)
@@ -422,3 +423,193 @@ class TestLoadData:
         # Verify SET search_path was called
         first_call = conn.execute.call_args_list[0]
         assert "search_path" in str(first_call[0][0])
+
+
+def _make_engine_mock() -> tuple[MagicMock, MagicMock, list[MagicMock]]:
+    """Build engine/conn mocks with savepoint support.
+
+    Returns:
+        (engine, conn, savepoints) where savepoints is a list of mock
+        savepoint objects that are returned by conn.begin_nested().
+    """
+    engine = MagicMock()
+    conn = MagicMock()
+    engine.begin.return_value.__enter__ = MagicMock(return_value=conn)
+    engine.begin.return_value.__exit__ = MagicMock(return_value=False)
+
+    savepoints: list[MagicMock] = []
+
+    def _begin_nested():
+        sp = MagicMock()
+        savepoints.append(sp)
+        ctx = MagicMock()
+        ctx.__enter__ = MagicMock(return_value=sp)
+        ctx.__exit__ = MagicMock(return_value=False)
+        return ctx
+
+    conn.begin_nested.side_effect = _begin_nested
+    return engine, conn, savepoints
+
+
+_VALID_RECORD = {
+    "part_number": "KF560C36BBE16",
+    "total_capacity_gb": 16,
+    "kit_modules": 1,
+    "brand": "KINGSTON",
+    "series": "FURY",
+    "speed_mts": 6000,
+    "ddr_gen": 5,
+    "has_rgb": True,
+    "store": "cyc",
+    "price": Decimal("89.99"),
+}
+
+
+class TestLoadDataSavepoints:
+    """Tests for savepoint-based error isolation in load_data."""
+
+    @patch("etl._insert_invalid_records")
+    @patch("etl._upsert_price_snapshots")
+    @patch("etl._upsert_products")
+    @patch("etl._upsert_stores")
+    def test_products_failure_raises_and_skips_snapshots(
+        self,
+        mock_stores: MagicMock,
+        mock_products: MagicMock,
+        mock_snapshots: MagicMock,
+        mock_invalid: MagicMock,
+    ) -> None:
+        """If _upsert_products fails, exception propagates and snapshots are skipped."""
+        engine, conn, savepoints = _make_engine_mock()
+        mock_stores.return_value = {"cyc": 1}
+        mock_products.side_effect = Exception("products insert failed")
+
+        with pytest.raises(Exception, match="products insert failed"):
+            with disable_run_logger():
+                load_data.fn([_VALID_RECORD], [], 1, engine, ["cyc"])
+
+        mock_stores.assert_called_once()
+        mock_products.assert_called_once()
+        mock_snapshots.assert_not_called()
+        mock_invalid.assert_not_called()
+        # Savepoint for products was rolled back
+        savepoints[0].rollback.assert_called_once()
+
+    @patch("etl._insert_invalid_records")
+    @patch("etl._upsert_price_snapshots")
+    @patch("etl._upsert_products")
+    @patch("etl._upsert_stores")
+    def test_snapshots_failure_preserves_products(
+        self,
+        mock_stores: MagicMock,
+        mock_products: MagicMock,
+        mock_snapshots: MagicMock,
+        mock_invalid: MagicMock,
+    ) -> None:
+        """If _upsert_price_snapshots fails, products are preserved and no exception propagates."""
+        engine, conn, savepoints = _make_engine_mock()
+        mock_stores.return_value = {"cyc": 1}
+        mock_products.return_value = {("KF560C36BBE16", 16, 1): 100}
+        mock_snapshots.side_effect = Exception("snapshots failed")
+
+        with disable_run_logger():
+            load_data.fn([_VALID_RECORD], [], 1, engine, ["cyc"])
+
+        mock_stores.assert_called_once()
+        mock_products.assert_called_once()
+        mock_snapshots.assert_called_once()
+        mock_invalid.assert_not_called()
+        # Savepoint for snapshots was rolled back, products savepoint was not
+        savepoints[0].rollback.assert_not_called()
+        savepoints[1].rollback.assert_called_once()
+
+    @patch("etl._insert_invalid_records")
+    @patch("etl._upsert_price_snapshots")
+    @patch("etl._upsert_products")
+    @patch("etl._upsert_stores")
+    def test_invalid_failure_preserves_everything(
+        self,
+        mock_stores: MagicMock,
+        mock_products: MagicMock,
+        mock_snapshots: MagicMock,
+        mock_invalid: MagicMock,
+    ) -> None:
+        """If _insert_invalid_records fails, products and snapshots are preserved."""
+        engine, conn, savepoints = _make_engine_mock()
+        mock_stores.return_value = {"cyc": 1}
+        mock_products.return_value = {("KF560C36BBE16", 16, 1): 100}
+        mock_invalid.side_effect = Exception("invalid failed")
+
+        invalid = [
+            {
+                "raw_name": "BAD RAM",
+                "store": "cyc",
+                "price": 29.99,
+                "error_reason": "brand: required",
+            }
+        ]
+
+        with disable_run_logger():
+            load_data.fn([_VALID_RECORD], invalid, 1, engine, ["cyc"])
+
+        mock_stores.assert_called_once()
+        mock_products.assert_called_once()
+        mock_snapshots.assert_called_once()
+        mock_invalid.assert_called_once()
+        # Only the invalid savepoint was rolled back
+        savepoints[0].rollback.assert_not_called()
+        savepoints[1].rollback.assert_not_called()
+        savepoints[2].rollback.assert_called_once()
+
+    @patch("etl._insert_invalid_records")
+    @patch("etl._upsert_price_snapshots")
+    @patch("etl._upsert_products")
+    @patch("etl._upsert_stores")
+    def test_products_failure_preserves_stores_in_transaction(
+        self,
+        mock_stores: MagicMock,
+        mock_products: MagicMock,
+        mock_snapshots: MagicMock,
+        mock_invalid: MagicMock,
+    ) -> None:
+        """Stores are preserved in the transaction even when products fail."""
+        engine, conn, savepoints = _make_engine_mock()
+        mock_stores.return_value = {"cyc": 1}
+        mock_products.side_effect = Exception("products failed")
+
+        with pytest.raises(Exception, match="products failed"):
+            with disable_run_logger():
+                load_data.fn([_VALID_RECORD], [], 1, engine, ["cyc"])
+
+        # Stores were called before products
+        mock_stores.assert_called_once()
+        call_order = [
+            mock_stores.call_args,
+            mock_products.call_args,
+        ]
+        assert call_order[0] is not None
+        assert call_order[1] is not None
+
+    @patch("etl._insert_invalid_records")
+    @patch("etl._upsert_price_snapshots")
+    @patch("etl._upsert_products")
+    @patch("etl._upsert_stores")
+    def test_all_succeed_no_savepoint_rollback(
+        self,
+        mock_stores: MagicMock,
+        mock_products: MagicMock,
+        mock_snapshots: MagicMock,
+        mock_invalid: MagicMock,
+    ) -> None:
+        """Happy path: no savepoint rollback is called."""
+        engine, conn, savepoints = _make_engine_mock()
+        mock_stores.return_value = {"cyc": 1}
+        mock_products.return_value = {("KF560C36BBE16", 16, 1): 100}
+
+        invalid = [{"raw_name": "BAD RAM", "store": "cyc", "price": 29.99, "error_reason": "err"}]
+
+        with disable_run_logger():
+            load_data.fn([_VALID_RECORD], invalid, 1, engine, ["cyc"])
+
+        for sp in savepoints:
+            sp.rollback.assert_not_called()

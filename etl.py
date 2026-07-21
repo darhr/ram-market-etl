@@ -190,6 +190,11 @@ def load_data(
     """
     Loads validated records into the silver schema.
 
+    Uses savepoints so that a failure in price snapshots or invalid records
+    does not revert already-upserted products.  A failure in products
+    re-raises so that Prefect can retry the whole task; stores are
+    idempotent (``ON CONFLICT DO NOTHING``) so they survive retries.
+
     Args:
         valid_records: Records that passed Pydantic validation.
         invalid_records: Records that failed validation (carry error_reason).
@@ -210,13 +215,40 @@ def load_data(
         store_to_id = _upsert_stores(conn, set(stores_success), logger)
 
         if valid_records:
-            product_id_map = _upsert_products(conn, valid_records, logger)
-            _upsert_price_snapshots(
-                conn, valid_records, product_id_map, store_to_id, etl_run_id, logger
-            )
+            with conn.begin_nested() as sp:
+                try:
+                    product_id_map = _upsert_products(conn, valid_records, logger)
+                except Exception:
+                    sp.rollback()
+                    raise
+
+            if product_id_map:
+                with conn.begin_nested() as sp:
+                    try:
+                        _upsert_price_snapshots(
+                            conn, valid_records, product_id_map,
+                            store_to_id, etl_run_id, logger,
+                        )
+                    except Exception:
+                        sp.rollback()
+                        logger.warning(
+                            "Price snapshots failed and were rolled back. "
+                            "Products were preserved."
+                        )
 
         if invalid_records:
-            _insert_invalid_records(conn, invalid_records, store_to_id, etl_run_id, logger)
+            with conn.begin_nested() as sp:
+                try:
+                    _insert_invalid_records(
+                        conn, invalid_records, store_to_id,
+                        etl_run_id, logger,
+                    )
+                except Exception:
+                    sp.rollback()
+                    logger.warning(
+                        "Invalid records insert failed and was rolled back. "
+                        "Rest of data was preserved."
+                    )
 
     logger.info("Load process completed successfully.")
 
