@@ -4,6 +4,7 @@ CyC Computer Scraper Module.
 This module provides a class to handle RAM memories information, from "CyC Computer" store website.
 """
 
+import json
 import logging
 import re
 from typing import Any, Dict, List
@@ -51,9 +52,16 @@ class CyCScraper(BaseScraper):
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error retrieving page: {e}")
-                break
+                raise
 
-            products_elements = response.json().get("products", [])
+            # The site may return an anti-bot HTML page (HTTP 200) instead of JSON
+            # on some days. Fail loudly so Prefect retries and cyc is recorded in
+            # stores_failed, instead of silently keeping the store out of bronze.
+            try:
+                products_elements = response.json().get("products", [])
+            except json.JSONDecodeError as e:
+                logger.error(f"Non-JSON response from page {page_number}: {e}")
+                raise
 
             # Empty list means the last page has been consumed
             if not products_elements:
