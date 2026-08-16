@@ -8,8 +8,7 @@ import logging
 import re
 from typing import Any, Dict, List
 
-import cloudscraper
-import requests
+from curl_cffi import requests
 
 from .base_scraper import BaseScraper
 
@@ -36,22 +35,23 @@ class SercoplusScraper(BaseScraper):
         page_number = 1
         extracted_products = []
 
-        # Initialize cloudscraper once to preserve Cloudflare clearance cookies across pages
-        scraper = cloudscraper.create_scraper()
+        # curl_cffi impersonates a real Chrome TLS/HTTP2 fingerprint. The session
+        # preserves cookies across pages.
+        session = requests.Session(impersonate="chrome")
 
         while True:
             # Endpoint used internally by the site to load products dynamically
             url = f"https://sercoplus.com/87-memoria-ram-pc?page={page_number}&from-xhr"
 
-            # Instruct the server to return JSON instead of HTML
+            # Instruct the server to return JSON instead of HTML. The User-Agent is
+            # set automatically by curl_cffi to match the impersonated browser.
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",  # noqa: E501
                 "X-Requested-With": "XMLHttpRequest",
                 "Accept": "application/json, text/javascript, */*; q=0.01",
             }
 
             try:
-                response = scraper.get(url, timeout=10, headers=headers)
+                response = session.get(url, timeout=10, headers=headers)
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error retrieving page: {e}")

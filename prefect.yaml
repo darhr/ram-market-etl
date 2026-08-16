@@ -30,7 +30,7 @@ deployments:
       job_variables:
         pip_packages:
           - boto3
-          - cloudscraper
+          - curl_cffi
           - pandas
           - prefect
           - psycopg2-binary

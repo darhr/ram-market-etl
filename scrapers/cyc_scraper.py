@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Any, Dict, List
 
-import requests
+from curl_cffi import requests
 
 from .base_scraper import BaseScraper
 
@@ -40,15 +40,15 @@ class CyCScraper(BaseScraper):
             # Endpoint used internally by the site to load products dynamically
             url = f"https://cyccomputer.pe/categoria/796-memorias-ram?page={page_number}&from-xhr"
 
-            # Instruct the server to return JSON instead of HTML
+            # Instruct the server to return JSON instead of HTML. The User-Agent is
+            # set automatically by curl_cffi to match the impersonated browser.
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",  # noqa: E501
                 "X-Requested-With": "XMLHttpRequest",
                 "Accept": "application/json, text/javascript, */*; q=0.01",
             }
 
             try:
-                response = requests.get(url, timeout=10, headers=headers)
+                response = requests.get(url, timeout=10, headers=headers, impersonate="chrome")
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error retrieving page: {e}")
