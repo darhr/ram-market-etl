@@ -63,7 +63,7 @@ class CompuvisionScraper(BaseScraper):
                 response.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Error retrieving page: {e}")
-                break
+                raise
 
             full_text = response.text
             json_start_index = full_text.find("{")
