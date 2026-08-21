@@ -81,9 +81,9 @@ An automated End-to-End ETL pipeline for monitoring PC hardware prices (RAM kits
 
 ### 3. Data Quality and Quarantine (Pydantic v2)
 - Enforces strict data contracts using typed Pydantic models:
-  - Validates numeric boundaries (e.g., $1600 \le \text{speed\_mts} \le 10000$, $1 \le \text{capacity\_gb} \le 256$, $\text{price} > 0$).
-  - Validates allowed literals ($\text{ddr\_gen} \in [3, 4, 5]$).
-  - Requires non-empty `part_number` and `store`.
+  - Validates numeric boundaries (e.g., `1600 <= Speed (MT/s) <= 10000`, `1 <= Capacity (GB) <= 256`, `Price > 0`).
+  - Validates allowed literals (`DDR Generation` ∈ [3, 4, 5]).
+  - Requires non-empty `part number` and `store`.
 - **Fault-Tolerant Quarantine:** Records failing validation are separated via `split_valid_invalid()` and routed to `silver.invalid_records` with full `ValidationError` details. The pipeline continues processing valid records without crashing.
 
 ### 4. Change Data Capture (CDC) and SCD-2 Historical Tracking

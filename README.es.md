@@ -81,9 +81,9 @@ Un pipeline ETL automatizado End-to-End para el monitoreo de precios de hardware
 
 ### 3. Calidad de Datos y Cuarentena (Pydantic v2)
 - Aplica contratos de datos estrictos mediante modelos tipados de Pydantic:
-  - Valida rangos numéricos (ej. $1600 \le \text{speed\_mts} \le 10000$, $1 \le \text{capacity\_gb} \le 256$, $\text{price} > 0$).
-  - Valida literales permitidos ($\text{ddr\_gen} \in [3, 4, 5]$).
-  - Exige campos obligatorios no vacíos como `part_number` y `store`.
+  - Validacion de rangos numericos (e.g., `1600 <= Velocidad (MT/s) <= 10000`, `1 <= Capacidad (GB) <= 256`, `precio > 0`).
+  - Validacion de valores permitidos (`Generacion DDR` ∈ [3, 4, 5]).
+  - Validacion de campos obligatorios no vacios como `Numero de parte` y `Tienda`.
 - **Cuarentena Tolerante a Fallos:** Los registros que fallan la validación se separan con `split_valid_invalid()` y se dirigen a `silver.invalid_records` con el detalle completo del `ValidationError`. El pipeline continúa procesando los registros válidos sin detenerse.
 
 ### 4. Change Data Capture (CDC) y Seguimiento Histórico SCD-2
