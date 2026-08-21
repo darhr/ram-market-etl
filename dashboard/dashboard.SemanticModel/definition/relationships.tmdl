@@ -1,0 +1,50 @@
+relationship 73278077-f7d0-4f37-98df-4100b9990e37
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_price.valid_from
+	toColumn: LocalDateTable_c6049af1-1fc5-4756-819e-1e575d89a385.Date
+
+relationship baa0def2-daee-4449-845f-969e8cb0b451
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_price.valid_to
+	toColumn: LocalDateTable_0b527040-77a1-4c5d-94ef-f1b911334cf4.Date
+
+relationship 6c215c02-3b80-4a6e-8ea9-61400881edd0
+	joinOnDateBehavior: datePartOnly
+	fromColumn: etl_store_status.finished_at
+	toColumn: LocalDateTable_143fbb0f-b50f-43fc-995c-a03cde3acab6.Date
+
+relationship 20d76cf5-e757-40ed-8dd5-fea5157f17e3
+	joinOnDateBehavior: datePartOnly
+	fromColumn: etl_runs.started_at
+	toColumn: LocalDateTable_a0f2690b-d2cb-402b-97a0-2bbcd9d471b8.Date
+
+relationship 0a546152-552e-4b56-aada-5b8e1c59363c
+	joinOnDateBehavior: datePartOnly
+	fromColumn: etl_runs.finished_at
+	toColumn: LocalDateTable_5f581a8a-6f19-45b7-99c8-2998ea65c460.Date
+
+relationship AutoDetected_443ae440-aa86-44ac-9d57-edbcfadd1438
+	fromColumn: etl_store_status.run_id
+	toColumn: etl_runs.run_id
+
+relationship 3236c9c1-3151-c419-55ba-b4e7cc0f7cc3
+	fromColumn: fact_price.product_id
+	toColumn: dim_product.id
+
+relationship 6c4a79a9-b15a-6598-d985-a860c67a7bc6
+	fromColumn: fact_price.store_id
+	toColumn: dim_store.id
+
+relationship a9528f53-9f07-eec7-973d-042f8da5cd1d
+	fromColumn: fact_price.etl_run_id
+	toColumn: etl_runs.run_id
+
+relationship f94e4752-cf66-4c9d-ae65-b0f30d914ecb
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_date.Date
+	toColumn: LocalDateTable_76e95151-0b29-44a2-90fd-a930c8cfd2df.Date
+
+relationship 71813323-4f8e-2b6b-8c10-c561c8edbef9
+	fromColumn: fact_price.valid_date
+	toColumn: dim_date.Date
+

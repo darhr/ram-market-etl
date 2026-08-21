@@ -1,0 +1,103 @@
+table _Measures
+	lineageTag: 2bb38356-2cb4-4e3c-84e0-072f78e17493
+
+	measure 'Current Price' =
+			
+			CALCULATE(
+			    AVERAGE(fact_price[price]),
+			    fact_price[is_current] = TRUE
+			)
+		lineageTag: b8a54004-a9f2-4c5b-9b93-e0578afd31a8
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Avg Price per GB' =
+			
+			CALCULATE(
+			    AVERAGEX(
+			        fact_price,
+			        DIVIDE(fact_price[price], RELATED(dim_product[capacity_gb]))
+			    ),
+			    fact_price[is_current] = TRUE
+			)
+		lineageTag: 5dead1c1-c0be-42ec-9ca5-cb81f10e93ff
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Last Successful Update' =
+			
+			CALCULATE(MAX(etl_runs[finished_at]), etl_runs[status] = "success")
+		formatString: d/mm/yy hh:nn
+		lineageTag: a06f295e-a344-43b5-a198-b10657f8b884
+
+		annotation PBI_FormatHint = {"isDateTimeCustom":true}
+
+	measure 'Avg ETL Duration (s)' =
+			
+			CALCULATE(AVERAGE(etl_runs[duration_seconds]), etl_runs[status] = "success")
+		lineageTag: 41799837-9ea4-458d-8439-fab339037d12
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Last Run Status Summary' = ```
+			
+			VAR LatestRun = CALCULATE(MAX(etl_store_status[run_id]), ALL(etl_store_status))
+			
+			VAR TotalStores = 
+			    CALCULATE(
+			        COUNTROWS(etl_store_status), 
+			        etl_store_status[run_id] = LatestRun, 
+			        ALL(etl_store_status)
+			    )
+			VAR FailedStores = 
+			    CALCULATE(
+			        COUNTROWS(etl_store_status), 
+			        etl_store_status[run_id] = LatestRun, 
+			        etl_store_status[status] = "failed", 
+			        ALL(etl_store_status)
+			    )
+			
+			RETURN
+			SWITCH(
+			    TRUE(),
+			    FailedStores = 0, "🟢 OK (" & TotalStores & "/" & TotalStores & ")",
+			    FailedStores < TotalStores, "🟡 Partial failure (" & TotalStores & "/" & TotalStores & ")",
+			    "🔴 Total error (" & TotalStores & ")"
+			)
+			```
+		lineageTag: a2633f0a-0a6c-4bed-84e6-509bd35c22d5
+
+	measure 'Effective Price (as-of)' =
+			
+			VAR selectedDate = MAX(dim_date[date])
+			VAR selectedDateTime = selectedDate + TIME(23, 59, 59)
+			RETURN
+			CALCULATE(
+			    AVERAGE(fact_price[price]),
+			    REMOVEFILTERS(dim_date),
+			    fact_price[valid_from] <= selectedDateTime,
+			    ISBLANK(fact_price[valid_to]) || fact_price[valid_to] > selectedDateTime
+			)
+		lineageTag: b79ead0e-f7a2-4880-96ab-5979703c907a
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Column1
+		dataType: string
+		lineageTag: 90321dbf-928f-4d17-bfcb-c5e07220c086
+		summarizeBy: none
+		sourceColumn: Column1
+
+		annotation SummarizationSetBy = Automatic
+
+	partition _Measures = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i44FAA==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Column1 = _t]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Column1", type text}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_ResultType = Table
+

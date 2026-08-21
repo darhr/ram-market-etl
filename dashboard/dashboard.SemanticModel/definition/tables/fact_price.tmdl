@@ -1,0 +1,133 @@
+table fact_price
+	lineageTag: 41084807-e12a-44ad-8943-abc8cb986f65
+
+	column product_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 27d9a1a6-9ef3-455c-93d9-e6f546279b52
+		summarizeBy: none
+		sourceColumn: product_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column store_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 58061dcb-16fd-4d97-abdf-e9c9ba973ab7
+		summarizeBy: none
+		sourceColumn: store_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column etl_run_id
+		dataType: int64
+		formatString: 0
+		lineageTag: f08e5bcf-107f-4a71-9671-5577840ab8a8
+		summarizeBy: none
+		sourceColumn: etl_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column price
+		dataType: double
+		lineageTag: 0120d7ff-7730-4f87-bb69-f0dfa771b5f6
+		summarizeBy: sum
+		sourceColumn: price
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column currency
+		dataType: string
+		lineageTag: 9a1ea918-ae6a-49ea-9efd-772238b201dc
+		summarizeBy: none
+		sourceColumn: currency
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_from
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 64c0ea36-9455-4a9f-b502-bf40eda55166
+		summarizeBy: none
+		sourceColumn: valid_from
+
+		variation Variation
+			isDefault
+			relationship: 73278077-f7d0-4f37-98df-4100b9990e37
+			defaultHierarchy: LocalDateTable_c6049af1-1fc5-4756-819e-1e575d89a385.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_to
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: ae8c80ed-741c-4c1f-b0cb-9c4bd52a62bb
+		summarizeBy: none
+		sourceColumn: valid_to
+
+		variation Variation
+			isDefault
+			relationship: baa0def2-daee-4449-845f-969e8cb0b451
+			defaultHierarchy: LocalDateTable_0b527040-77a1-4c5d-94ef-f1b911334cf4.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_current
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 0cb6d0af-7b2a-40c3-bf77-df4fd710f984
+		summarizeBy: none
+		sourceColumn: is_current
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 690b090e-4864-4841-ac1f-f18fa15e09ce
+		summarizeBy: none
+		sourceColumn: valid_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column is_outlier = ```
+			
+			VAR vCurrentPrice = fact_price[price]
+			VAR vCurrentDDR = RELATED(dim_product[ddr_gen])
+			
+			VAR vMedianaDDR = 
+			    CALCULATE(
+			        MEDIAN(fact_price[price]),
+			        ALL(fact_price),
+			        dim_product[ddr_gen] = vCurrentDDR
+			    )
+			
+			RETURN
+			    IF(
+			        ISBLANK(vCurrentPrice) || vCurrentPrice <= 0 ||
+			        vCurrentPrice > (vMedianaDDR * 5) || 
+			        vCurrentPrice < (vMedianaDDR * 0.3),
+			        TRUE(),
+			        FALSE()
+			    )
+			```
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: dc24c04c-b96b-415b-9954-68097fafdbbe
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	partition fact_price = m
+		mode: import
+		source =
+				let
+				    Source = Value.NativeQuery(PostgreSQL.Database("ep-lucky-sun-acqiy3kt-pooler.sa-east-1.aws.neon.tech", "ram_scraper"), "SELECT ps.product_id, ps.store_id, ps.etl_run_id, ps.price, ps.currency,#(lf)       ps.valid_from, ps.valid_to, ps.is_current,#(lf)       DATE(ps.valid_from) AS valid_date#(lf)FROM silver.price_snapshot ps", null, [EnableFolding=true])
+				in
+				    Source
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
