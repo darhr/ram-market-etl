@@ -1,0 +1,87 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "name": "789852aaaac16ee1345a",
+  "displayName": "RAM Market",
+  "displayOption": "FitToPage",
+  "height": 720,
+  "width": 1280,
+  "pageBinding": {
+    "name": "66e4373ab4d033a71d0d",
+    "type": "Default",
+    "parameters": []
+  },
+  "objects": {
+    "background": [
+      {
+        "properties": {
+          "color": {
+            "solid": {
+              "color": {
+                "expr": {
+                  "ThemeDataColor": {
+                    "ColorId": 9,
+                    "Percent": -0.5
+                  }
+                }
+              }
+            }
+          },
+          "transparency": {
+            "expr": {
+              "Literal": {
+                "Value": "0D"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "visualInteractions": [
+    {
+      "source": "ec04d12b949021b7ecd4",
+      "target": "224331cbe975896926bd",
+      "type": "NoFilter"
+    },
+    {
+      "source": "792d793581aaf142a59d",
+      "target": "ec04d12b949021b7ecd4",
+      "type": "NoFilter"
+    },
+    {
+      "source": "792d793581aaf142a59d",
+      "target": "bb5f09169dec9f2a63d2",
+      "type": "NoFilter"
+    },
+    {
+      "source": "792d793581aaf142a59d",
+      "target": "0debf68366037f95c934",
+      "type": "NoFilter"
+    },
+    {
+      "source": "792d793581aaf142a59d",
+      "target": "83dc1d77bfbd9d48a4c7",
+      "type": "NoFilter"
+    },
+    {
+      "source": "792d793581aaf142a59d",
+      "target": "8c8407bfaf1979de2523",
+      "type": "NoFilter"
+    },
+    {
+      "source": "792d793581aaf142a59d",
+      "target": "28cbb19d4e83670c4be2",
+      "type": "DataFilter"
+    },
+    {
+      "source": "8c8407bfaf1979de2523",
+      "target": "83dc1d77bfbd9d48a4c7",
+      "type": "DataFilter"
+    },
+    {
+      "source": "0debf68366037f95c934",
+      "target": "ec04d12b949021b7ecd4",
+      "type": "NoFilter"
+    }
+  ]
+}

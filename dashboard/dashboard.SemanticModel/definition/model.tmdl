@@ -1,0 +1,32 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: es-ES
+	valueFilterBehavior: independent
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_ProTooling = ["DevMode"]
+
+annotation PBI_QueryOrder = ["dim_product","dim_store","fact_price","etl_store_status","etl_runs","_Measures"]
+
+ref table dim_product
+ref table dim_store
+ref table fact_price
+ref table DateTableTemplate_026ed045-6002-4d7f-91a7-2b037c51d8e5
+ref table LocalDateTable_c6049af1-1fc5-4756-819e-1e575d89a385
+ref table LocalDateTable_0b527040-77a1-4c5d-94ef-f1b911334cf4
+ref table etl_store_status
+ref table LocalDateTable_143fbb0f-b50f-43fc-995c-a03cde3acab6
+ref table etl_runs
+ref table LocalDateTable_a0f2690b-d2cb-402b-97a0-2bbcd9d471b8
+ref table LocalDateTable_5f581a8a-6f19-45b7-99c8-2998ea65c460
+ref table dim_date
+ref table LocalDateTable_76e95151-0b29-44a2-90fd-a930c8cfd2df
+ref table _Measures
+
+ref cultureInfo en-US
+

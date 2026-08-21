@@ -1,0 +1,108 @@
+table dim_product
+	lineageTag: 6de54dde-8bdb-4bf0-afac-7c218a66cf65
+
+	column id
+		dataType: int64
+		formatString: 0
+		lineageTag: 64b9ed4c-e431-4489-a009-7812c2e1adbd
+		summarizeBy: none
+		sourceColumn: id
+
+		annotation SummarizationSetBy = Automatic
+
+	column brand
+		dataType: string
+		lineageTag: 2231755a-5131-4454-889e-6e1f9d1e0843
+		summarizeBy: none
+		sourceColumn: brand
+
+		annotation SummarizationSetBy = Automatic
+
+	column series
+		dataType: string
+		lineageTag: f1cafedb-5457-4e68-b4ec-6aeb83909304
+		summarizeBy: none
+		sourceColumn: series
+
+		annotation SummarizationSetBy = Automatic
+
+	column capacity_gb
+		dataType: int64
+		formatString: 0
+		lineageTag: 9c89e3ad-c437-4a10-8260-13db28677058
+		summarizeBy: none
+		sourceColumn: capacity_gb
+
+		annotation SummarizationSetBy = Automatic
+
+	column speed_mts
+		dataType: int64
+		formatString: 0
+		lineageTag: 6a63d755-5cd0-4096-b8a4-9b2113dfe3af
+		summarizeBy: none
+		sourceColumn: speed_mts
+
+		annotation SummarizationSetBy = Automatic
+
+	column ddr_gen
+		dataType: int64
+		formatString: 0
+		lineageTag: 79bbcabd-647f-4534-9003-3b5ec2d7cc5b
+		summarizeBy: none
+		sourceColumn: ddr_gen
+
+		annotation SummarizationSetBy = Automatic
+
+	column kit_modules
+		dataType: int64
+		formatString: 0
+		lineageTag: 2dd9baec-e855-4452-9ee2-324cad589f21
+		summarizeBy: none
+		sourceColumn: kit_modules
+
+		annotation SummarizationSetBy = Automatic
+
+	column has_rgb
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: ea32e587-2d79-4576-a1d3-e28133fb52c2
+		summarizeBy: none
+		sourceColumn: has_rgb
+
+		annotation SummarizationSetBy = Automatic
+
+	column part_number
+		dataType: string
+		lineageTag: c1ddc30b-58b9-4887-aac8-3dc4b1e294d6
+		summarizeBy: none
+		sourceColumn: part_number
+
+		annotation SummarizationSetBy = Automatic
+
+	column 'Product Label' = ```
+			
+			dim_product[brand] & " " & 
+			COALESCE(dim_product[series] & " ", "") & 
+			dim_product[capacity_gb] & "GB DDR" & 
+			dim_product[ddr_gen] & " " & 
+			dim_product[speed_mts] & "MT/s" &
+			IF(dim_product[kit_modules] > 1, " (" & dim_product[kit_modules] & "x" & (dim_product[capacity_gb] / dim_product[kit_modules]) & "GB)", "") &
+			IF(dim_product[has_rgb], " RGB", "")
+			```
+		lineageTag: 0d056c52-a400-4ba7-aeab-9472fabcbd1e
+		summarizeBy: none
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_product = m
+		mode: import
+		source =
+				let
+				    Source = Value.NativeQuery(PostgreSQL.Database("ep-lucky-sun-acqiy3kt-pooler.sa-east-1.aws.neon.tech", "ram_scraper"), "SELECT id, brand, series, capacity_gb, speed_mts, ddr_gen, kit_modules, has_rgb, part_number#(lf)FROM silver.product", null, [EnableFolding=true])
+				in
+				    Source
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

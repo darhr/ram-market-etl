@@ -1,0 +1,56 @@
+table etl_store_status
+	lineageTag: 8fd89dfd-7ab3-4dbd-a1c8-797f811737d4
+
+	column run_id
+		dataType: int64
+		formatString: 0
+		lineageTag: e5db70b2-ed94-4d0a-9028-7560f11f54aa
+		summarizeBy: none
+		sourceColumn: run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column finished_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 0073b7a0-f3d1-4663-8f43-c1e2560c94cd
+		summarizeBy: none
+		sourceColumn: finished_at
+
+		variation Variation
+			isDefault
+			relationship: 6c215c02-3b80-4a6e-8ea9-61400881edd0
+			defaultHierarchy: LocalDateTable_143fbb0f-b50f-43fc-995c-a03cde3acab6.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column store_name
+		dataType: string
+		lineageTag: 173323dc-88d3-456e-ba05-91ee56112b9b
+		summarizeBy: none
+		sourceColumn: store_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column status
+		dataType: string
+		lineageTag: 00c46c07-dfe9-45bd-9878-248046711f6d
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	partition etl_store_status = m
+		mode: import
+		source =
+				let
+				    Source = PostgreSQL.Database("ep-lucky-sun-acqiy3kt-pooler.sa-east-1.aws.neon.tech", "ram_scraper"),
+				    gold_v_etl_store_status = Source{[Schema="gold",Item="v_etl_store_status"]}[Data],
+				    #"Uppercased Text" = Table.TransformColumns(gold_v_etl_store_status,{{"status", Text.Upper, type text}})
+				in
+				    #"Uppercased Text"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+

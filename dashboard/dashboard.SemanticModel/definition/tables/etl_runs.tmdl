@@ -1,0 +1,123 @@
+table etl_runs
+	lineageTag: 7802d232-5a6b-426d-9285-e3c8a72c43e0
+
+	column run_id
+		dataType: int64
+		formatString: 0
+		lineageTag: 700b4602-4ba7-4ba4-8264-a5320e423cb7
+		summarizeBy: none
+		sourceColumn: run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column started_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 0c0ab0c2-7483-4647-af25-80eca2667aa3
+		summarizeBy: none
+		sourceColumn: started_at
+
+		variation Variation
+			isDefault
+			relationship: 20d76cf5-e757-40ed-8dd5-fea5157f17e3
+			defaultHierarchy: LocalDateTable_a0f2690b-d2cb-402b-97a0-2bbcd9d471b8.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column finished_at
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 5d4504b6-0043-4855-8a22-1793fa567f19
+		summarizeBy: none
+		sourceColumn: finished_at
+
+		variation Variation
+			isDefault
+			relationship: 0a546152-552e-4b56-aada-5b8e1c59363c
+			defaultHierarchy: LocalDateTable_5f581a8a-6f19-45b7-99c8-2998ea65c460.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column duration_seconds
+		dataType: double
+		lineageTag: 33e24d04-7a2c-412a-9b63-3ebb9fc71d10
+		summarizeBy: sum
+		sourceColumn: duration_seconds
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column status
+		dataType: string
+		lineageTag: dfbb8a8c-7e44-4a03-9de2-b5bd45e21cb9
+		summarizeBy: none
+		sourceColumn: status
+
+		annotation SummarizationSetBy = Automatic
+
+	column triggered_by
+		dataType: string
+		lineageTag: e118c19b-16c0-4c87-acbc-415d0c50bb22
+		summarizeBy: none
+		sourceColumn: triggered_by
+
+		annotation SummarizationSetBy = Automatic
+
+	column raw_records
+		dataType: int64
+		formatString: 0
+		lineageTag: 545a7145-95fa-4673-9607-db3e9554d79b
+		summarizeBy: sum
+		sourceColumn: raw_records
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_records
+		dataType: int64
+		formatString: 0
+		lineageTag: 67eb1aff-ae76-435a-a00b-99e7f9e13c1d
+		summarizeBy: sum
+		sourceColumn: valid_records
+
+		annotation SummarizationSetBy = Automatic
+
+	column invalid_records
+		dataType: int64
+		formatString: 0
+		lineageTag: 7e50145c-6ac3-4f29-bfec-6920e786923b
+		summarizeBy: sum
+		sourceColumn: invalid_records
+
+		annotation SummarizationSetBy = Automatic
+
+	column stores_success
+		dataType: string
+		lineageTag: 1d8bbd44-8b72-4e1b-ab9d-441643699d2e
+		summarizeBy: none
+		sourceColumn: stores_success
+
+		annotation SummarizationSetBy = Automatic
+
+	column stores_failed
+		dataType: string
+		lineageTag: 897abb1a-47e8-4da7-b0a8-ee7221ee5c61
+		summarizeBy: none
+		sourceColumn: stores_failed
+
+		annotation SummarizationSetBy = Automatic
+
+	partition etl_runs = m
+		mode: import
+		source =
+				let
+				    Source = PostgreSQL.Database("ep-lucky-sun-acqiy3kt-pooler.sa-east-1.aws.neon.tech", "ram_scraper"),
+				    gold_v_etl_runs = Source{[Schema="gold",Item="v_etl_runs"]}[Data],
+				    #"Renamed Columns" = Table.RenameColumns(gold_v_etl_runs,{{"run_id", "run_id"}})
+				in
+				    #"Renamed Columns"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
+
